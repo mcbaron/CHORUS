@@ -534,7 +534,7 @@ git commit -m "feat: add stereo prototype generation"
 - Create: `src/chorus/estimation.py`
 - Test: `tests/test_estimation.py`
 
-- [ ] **Step 1: Write failing estimation tests**
+- [x] **Step 1: Write failing estimation tests**
 
 Create `tests/test_estimation.py`:
 
@@ -580,7 +580,7 @@ def test_estimator_smooths_weight_changes() -> None:
     assert first[0] > second[0] > 0.0
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run:
 
@@ -590,7 +590,7 @@ poetry run pytest tests/test_estimation.py -q
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'chorus.estimation'`.
 
-- [ ] **Step 3: Implement scalar estimator**
+- [x] **Step 3: Implement scalar estimator**
 
 Create `src/chorus/estimation.py`:
 
@@ -636,7 +636,7 @@ class SmoothedScalarEstimator:
         return estimated, weights
 ```
 
-- [ ] **Step 4: Run estimation tests**
+- [x] **Step 4: Run estimation tests**
 
 Run:
 
@@ -646,7 +646,7 @@ poetry run pytest tests/test_estimation.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/estimation.py tests/test_estimation.py
