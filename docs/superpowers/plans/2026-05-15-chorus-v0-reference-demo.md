@@ -542,6 +542,7 @@ Create `tests/test_estimation.py`:
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from chorus.estimation import SmoothedScalarEstimator
 
@@ -570,6 +571,17 @@ def test_estimator_is_stable_for_silence() -> None:
     np.testing.assert_allclose(estimated, np.zeros_like(estimated))
 
 
+def test_estimator_uses_epsilon_as_denominator_floor() -> None:
+    estimator = SmoothedScalarEstimator(alpha=0.0, epsilon=0.1)
+    source = np.array([1.0 + 0.0j])
+    prototype = source.copy()
+
+    estimated, weights = estimator.estimate(prototype, source)
+
+    np.testing.assert_allclose(weights, np.array([1.0]))
+    np.testing.assert_allclose(estimated, source)
+
+
 def test_estimator_smooths_weight_changes() -> None:
     estimator = SmoothedScalarEstimator(alpha=0.5, epsilon=1e-12)
     source = np.array([1.0 + 0.0j])
@@ -578,6 +590,26 @@ def test_estimator_smooths_weight_changes() -> None:
     _, second = estimator.estimate(np.array([0.0 + 0.0j]), source)
 
     assert first[0] > second[0] > 0.0
+
+
+def test_estimator_rejects_invalid_alpha() -> None:
+    with pytest.raises(ValueError, match=r"alpha must be in \[0, 1\)"):
+        SmoothedScalarEstimator(alpha=1.0)
+
+
+def test_estimator_rejects_invalid_epsilon() -> None:
+    with pytest.raises(ValueError, match="epsilon must be positive"):
+        SmoothedScalarEstimator(epsilon=0.0)
+
+
+def test_estimator_rejects_shape_mismatch() -> None:
+    estimator = SmoothedScalarEstimator()
+
+    with pytest.raises(ValueError, match=r"prototype shape \(2,\) != source shape \(1,\)"):
+        estimator.estimate(
+            np.array([1.0 + 0.0j, 2.0 + 0.0j]),
+            np.array([1.0 + 0.0j]),
+        )
 ```
 
 - [x] **Step 2: Run tests to verify they fail**
@@ -631,7 +663,7 @@ class SmoothedScalarEstimator:
             self._cross = (1.0 - self.alpha) * instant_cross + self.alpha * self._cross
             self._auto = (1.0 - self.alpha) * instant_auto + self.alpha * self._auto
 
-        weights = np.real(self._cross) / (self._auto + self.epsilon)
+        weights = np.real(self._cross) / np.maximum(self._auto, self.epsilon)
         estimated = weights * source
         return estimated, weights
 ```

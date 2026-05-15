@@ -34,6 +34,6 @@ class SmoothedScalarEstimator:
             self._cross = (1.0 - self.alpha) * instant_cross + self.alpha * self._cross
             self._auto = (1.0 - self.alpha) * instant_auto + self.alpha * self._auto
 
-        weights = np.real(self._cross) / (self._auto + self.epsilon)
+        weights = np.real(self._cross) / np.maximum(self._auto, self.epsilon)
         estimated = weights * source
         return estimated, weights
