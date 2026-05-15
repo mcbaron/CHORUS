@@ -37,7 +37,7 @@
 - Create: `src/chorus/cli.py`
 - Create: `tests/conftest.py`
 
-- [ ] **Step 1: Write the package scaffold**
+- [x] **Step 1: Write the package scaffold**
 
 Create `pyproject.toml`:
 
@@ -149,7 +149,7 @@ def stereo_identical(sine_440: np.ndarray) -> np.ndarray:
     return np.column_stack([sine_440, sine_440])
 ```
 
-- [ ] **Step 2: Install dependencies**
+- [x] **Step 2: Install dependencies**
 
 Run:
 
@@ -159,7 +159,7 @@ poetry install
 
 Expected: Poetry creates an environment, writes `poetry.lock`, and installs `numpy`, `scipy`, `PyWavelets`, `pytest`, and `ruff`.
 
-- [ ] **Step 3: Run the empty test suite**
+- [x] **Step 3: Run the empty test suite**
 
 Run:
 
@@ -170,7 +170,7 @@ poetry run pytest -q
 
 Expected: `poetry run chorus --help` exits 0 and prints argparse help. Pytest exits with code 5 and prints `no tests ran`. This confirms the scaffold imports before tests are added.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add pyproject.toml poetry.lock README.md src/chorus/__init__.py src/chorus/cli.py tests/conftest.py
@@ -183,7 +183,7 @@ git commit -m "chore: scaffold chorus python package"
 - Create: `src/chorus/transforms.py`
 - Test: `tests/test_transforms.py`
 
-- [ ] **Step 1: Write failing STFT pass-through tests**
+- [x] **Step 1: Write failing STFT pass-through tests**
 
 Create `tests/test_transforms.py`:
 
@@ -236,7 +236,7 @@ def test_experimental_wavelet_adapter_smoke(stereo_identical: np.ndarray) -> Non
     assert representation.metadata["transform"] == "wavelet"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run:
 
@@ -246,7 +246,7 @@ poetry run pytest tests/test_transforms.py -q
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'chorus.transforms'`.
 
-- [ ] **Step 3: Implement transform classes**
+- [x] **Step 3: Implement transform classes**
 
 Create `src/chorus/transforms.py`:
 
@@ -382,7 +382,7 @@ class WaveletTransform:
         raise NotImplementedError("Wavelet full splitting is experimental and unsupported in v0")
 ```
 
-- [ ] **Step 4: Run transform tests**
+- [x] **Step 4: Run transform tests**
 
 Run:
 
@@ -392,7 +392,7 @@ poetry run pytest tests/test_transforms.py -q
 
 Expected: PASS. If the STFT round trip fails because `ShortTimeFFT` boundary behavior differs, adjust only `STFTTransform.forward` and `STFTTransform.inverse` until this pass-through test meets `1e-10`; do not loosen the test first.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/transforms.py tests/test_transforms.py
@@ -405,7 +405,7 @@ git commit -m "feat: add reference stft transform"
 - Create: `src/chorus/prototypes.py`
 - Test: `tests/test_prototypes.py`
 
-- [ ] **Step 1: Write failing prototype tests**
+- [x] **Step 1: Write failing prototype tests**
 
 Create `tests/test_prototypes.py`:
 
@@ -462,7 +462,7 @@ def test_surround_prototype_rejects_equal_in_phase_content() -> None:
     np.testing.assert_allclose(surround, np.array([0.0 + 0.0j]), atol=1e-12)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run:
 
@@ -472,7 +472,7 @@ poetry run pytest tests/test_prototypes.py -q
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'chorus.prototypes'`.
 
-- [ ] **Step 3: Implement prototype functions**
+- [x] **Step 3: Implement prototype functions**
 
 Create `src/chorus/prototypes.py`:
 
@@ -511,7 +511,7 @@ def surround_prototype(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     return 0.5 * (left_part - right_part)
 ```
 
-- [ ] **Step 4: Run prototype tests**
+- [x] **Step 4: Run prototype tests**
 
 Run:
 
@@ -521,7 +521,7 @@ poetry run pytest tests/test_prototypes.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/prototypes.py tests/test_prototypes.py
