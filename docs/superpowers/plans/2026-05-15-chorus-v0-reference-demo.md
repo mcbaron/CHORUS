@@ -1128,7 +1128,7 @@ git commit -m "feat: add wav io and reports"
 - Modify: `src/chorus/cli.py`
 - Modify: `tests/test_io_cli.py`
 
-- [ ] **Step 1: Add failing CLI test**
+- [x] **Step 1: Add failing CLI test**
 
 Add `from chorus.cli import main` to the import block near the top of `tests/test_io_cli.py`, then append this test:
 
@@ -1147,7 +1147,7 @@ def test_cli_split_writes_expected_outputs(tmp_path, stereo_identical: np.ndarra
     assert (out_dir / "report.json").exists()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1157,7 +1157,7 @@ poetry run pytest tests/test_io_cli.py::test_cli_split_writes_expected_outputs -
 
 Expected: FAIL because the placeholder CLI does not recognize the `split` command.
 
-- [ ] **Step 3: Implement CLI**
+- [x] **Step 3: Implement CLI**
 
 Create `src/chorus/cli.py`:
 
@@ -1218,7 +1218,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Run CLI test**
+- [x] **Step 4: Run CLI test**
 
 Run:
 
@@ -1228,7 +1228,7 @@ poetry run pytest tests/test_io_cli.py::test_cli_split_writes_expected_outputs -
 
 Expected: PASS.
 
-- [ ] **Step 5: Run full I/O/CLI tests**
+- [x] **Step 5: Run full I/O/CLI tests**
 
 Run:
 
@@ -1238,7 +1238,7 @@ poetry run pytest tests/test_io_cli.py -q
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/chorus/cli.py tests/test_io_cli.py
