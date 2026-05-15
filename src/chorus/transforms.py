@@ -89,6 +89,23 @@ class STFTTransform:
         ]
         return np.column_stack(channels)
 
+    def inverse_components(
+        self, components: np.ndarray, original_shape: tuple[int, int]
+    ) -> np.ndarray:
+        representation = TransformRepresentation(
+            data=components,
+            original_shape=original_shape,
+            metadata={
+                "transform": "stft",
+                "frame_size": self.config.frame_size,
+                "hop_size": self.config.hop_size,
+                "fft_size": self.config.frame_size,
+                "window": "sqrt_hann",
+                "experimental": False,
+            },
+        )
+        return self.inverse(representation)
+
 
 class FrFTTransform:
     def __init__(self, order: float = 1.0) -> None:
