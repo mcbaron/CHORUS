@@ -42,6 +42,10 @@ class STFTTransform:
     def __init__(self, config: STFTConfig | None = None) -> None:
         self.config = config or STFTConfig()
         fft_size = self.config.fft_size or self.config.frame_size
+        if self.config.frame_size <= 0:
+            raise ValueError("v0 STFT requires frame_size to be positive")
+        if self.config.hop_size <= 0:
+            raise ValueError("v0 STFT requires hop_size to be positive")
         if fft_size != self.config.frame_size:
             raise ValueError("v0 STFT requires fft_size to equal frame_size")
         window = np.sqrt(np.hanning(self.config.frame_size))
@@ -52,9 +56,18 @@ class STFTTransform:
             fft_mode="onesided",
             mfft=self.config.frame_size,
         )
+        if not self._stft.invertible:
+            raise ValueError(
+                "v0 STFT requires an invertible frame_size/hop_size configuration"
+            )
 
     def forward(self, stereo: np.ndarray) -> TransformRepresentation:
         stereo = _validate_stereo(stereo)
+        if stereo.shape[0] < self.config.frame_size:
+            raise ValueError(
+                f"v0 STFT requires at least {self.config.frame_size} samples, "
+                f"got {stereo.shape[0]}"
+            )
         data = np.stack([self._stft.stft(channel) for channel in stereo.T], axis=0)
         return TransformRepresentation(
             data=data,

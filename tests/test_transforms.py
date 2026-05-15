@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from chorus.transforms import FrFTTransform, STFTConfig, STFTTransform, WaveletTransform
 
 
@@ -23,6 +24,19 @@ def test_stft_metadata_records_reference_settings(stereo_identical: np.ndarray) 
     assert representation.metadata["frame_size"] == 1024
     assert representation.metadata["hop_size"] == 512
     assert representation.metadata["window"] == "sqrt_hann"
+
+
+def test_stft_rejects_non_invertible_hop_size() -> None:
+    with pytest.raises(ValueError, match="invertible"):
+        STFTTransform(STFTConfig(frame_size=1024, hop_size=1024))
+
+
+def test_stft_rejects_too_short_stereo_input() -> None:
+    transform = STFTTransform()
+    too_short = np.zeros((512, 2), dtype=np.float64)
+
+    with pytest.raises(ValueError, match="at least 1024 samples"):
+        transform.forward(too_short)
 
 
 def test_experimental_frft_adapter_smoke(stereo_identical: np.ndarray) -> None:
