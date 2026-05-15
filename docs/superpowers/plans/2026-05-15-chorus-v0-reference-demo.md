@@ -692,7 +692,7 @@ git commit -m "feat: add smoothed least squares estimator"
 - Modify: `src/chorus/transforms.py`
 - Test: `tests/test_core.py`
 
-- [ ] **Step 1: Write failing core tests**
+- [x] **Step 1: Write failing core tests**
 
 Create `tests/test_core.py`:
 
@@ -780,7 +780,7 @@ def test_silence_is_stable(sample_rate: int) -> None:
     assert np.all(np.isfinite(result.surround))
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run:
 
@@ -790,7 +790,7 @@ poetry run pytest tests/test_core.py -q
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'chorus.core'`.
 
-- [ ] **Step 3: Add inverse helpers for component arrays**
+- [x] **Step 3: Add inverse helpers for component arrays**
 
 Modify `src/chorus/transforms.py` by adding this method to `STFTTransform`:
 
@@ -813,7 +813,7 @@ Modify `src/chorus/transforms.py` by adding this method to `STFTTransform`:
         return self.inverse(representation)
 ```
 
-- [ ] **Step 4: Implement core processor**
+- [x] **Step 4: Implement core processor**
 
 Create `src/chorus/core.py`:
 
@@ -902,7 +902,7 @@ class ChorusProcessor:
         return output
 ```
 
-- [ ] **Step 5: Run core tests**
+- [x] **Step 5: Run core tests**
 
 Run:
 
@@ -912,7 +912,7 @@ poetry run pytest tests/test_core.py -q
 
 Expected: PASS.
 
-- [ ] **Step 6: Run transform and core tests together**
+- [x] **Step 6: Run transform and core tests together**
 
 Run:
 
@@ -922,7 +922,7 @@ poetry run pytest tests/test_transforms.py tests/test_core.py -q
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/chorus/core.py src/chorus/transforms.py tests/test_core.py
