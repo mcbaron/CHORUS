@@ -4,6 +4,7 @@ import json
 
 import numpy as np
 import pytest
+from chorus.cli import main
 from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.io import build_report, read_stereo_wav, write_stems
 from scipy.io import wavfile
@@ -117,3 +118,19 @@ def test_write_stems_writes_float32_wav(
     _loaded_rate, center = wavfile.read(stem_paths["center"])
 
     assert center.dtype == np.float32
+
+
+def test_cli_split_writes_expected_outputs(
+    tmp_path, stereo_identical: np.ndarray, sample_rate: int
+) -> None:
+    input_path = tmp_path / "input.wav"
+    out_dir = tmp_path / "out"
+    wavfile.write(input_path, sample_rate, stereo_identical.astype(np.float32))
+
+    exit_code = main(["split", str(input_path), "--out-dir", str(out_dir), "--transform", "stft"])
+
+    assert exit_code == 0
+    assert (out_dir / "center.wav").exists()
+    assert (out_dir / "only.wav").exists()
+    assert (out_dir / "surround.wav").exists()
+    assert (out_dir / "report.json").exists()
