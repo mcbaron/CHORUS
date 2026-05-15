@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "chorus"
+version = "0.1.0"
+description = "CHORUS reference demo for reconstructed upmixed stereo contributions"
+authors = ["CHORUS contributors"]
+readme = "README.md"
+packages = [{ include = "chorus", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+numpy = "^1.26"
+scipy = "^1.13"
+PyWavelets = "^1.6"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2"
+ruff = "^0.4"
+
+[tool.poetry.scripts]
+chorus = "chorus.cli:main"
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
