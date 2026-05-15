@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pytest
 from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.io import build_report, read_stereo_wav, write_stems
 from scipy.io import wavfile
@@ -42,3 +43,77 @@ def test_wav_read_write_and_report(
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     loaded_report = json.loads(report_path.read_text(encoding="utf-8"))
     assert loaded_report["input"]["sample_rate"] == sample_rate
+
+
+def test_read_stereo_wav_normalizes_signed_integer_pcm(tmp_path, sample_rate: int) -> None:
+    input_path = tmp_path / "signed.wav"
+    samples = np.array(
+        [
+            [np.iinfo(np.int16).min, np.iinfo(np.int16).max],
+            [0, -1],
+        ],
+        dtype=np.int16,
+    )
+    wavfile.write(input_path, sample_rate, samples)
+
+    loaded_rate, loaded = read_stereo_wav(input_path)
+
+    assert loaded_rate == sample_rate
+    assert loaded.dtype == np.float64
+    np.testing.assert_allclose(
+        loaded,
+        np.array(
+            [
+                [-1.0, np.iinfo(np.int16).max / 32768.0],
+                [0.0, -1.0 / 32768.0],
+            ]
+        ),
+    )
+    assert np.max(np.abs(loaded)) <= 1.0
+
+
+def test_read_stereo_wav_normalizes_unsigned_integer_pcm(tmp_path, sample_rate: int) -> None:
+    input_path = tmp_path / "unsigned.wav"
+    samples = np.array(
+        [
+            [0, 128],
+            [255, 128],
+        ],
+        dtype=np.uint8,
+    )
+    wavfile.write(input_path, sample_rate, samples)
+
+    loaded_rate, loaded = read_stereo_wav(input_path)
+
+    assert loaded_rate == sample_rate
+    assert loaded.dtype == np.float64
+    np.testing.assert_allclose(
+        loaded,
+        np.array(
+            [
+                [-1.0, 0.0],
+                [127.0 / 128.0, 0.0],
+            ]
+        ),
+    )
+    assert np.max(np.abs(loaded)) <= 1.0
+
+
+def test_read_stereo_wav_rejects_non_stereo_shapes(tmp_path, sample_rate: int) -> None:
+    input_path = tmp_path / "mono.wav"
+    wavfile.write(input_path, sample_rate, np.zeros(8, dtype=np.float32))
+
+    with pytest.raises(ValueError, match="expected stereo WAV"):
+        read_stereo_wav(input_path)
+
+
+def test_write_stems_writes_float32_wav(
+    tmp_path, stereo_identical: np.ndarray, sample_rate: int
+) -> None:
+    processor = ChorusProcessor(ChorusConfig(sample_rate=sample_rate, smoothing_alpha=0.0))
+    result = processor.process(stereo_identical)
+    stem_paths = write_stems(tmp_path, sample_rate, result)
+
+    _loaded_rate, center = wavfile.read(stem_paths["center"])
+
+    assert center.dtype == np.float32

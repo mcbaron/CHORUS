@@ -13,9 +13,14 @@ def read_stereo_wav(path: str | Path) -> tuple[int, np.ndarray]:
     array = np.asarray(data)
     if array.ndim != 2 or array.shape[1] != 2:
         raise ValueError(f"expected stereo WAV shaped (samples, 2), got {array.shape}")
-    if np.issubdtype(array.dtype, np.integer):
-        max_value = float(np.iinfo(array.dtype).max)
-        array = array.astype(np.float64) / max_value
+    if np.issubdtype(array.dtype, np.unsignedinteger):
+        info = np.iinfo(array.dtype)
+        midpoint = float(info.max + 1) / 2.0
+        array = (array.astype(np.float64) - midpoint) / midpoint
+    elif np.issubdtype(array.dtype, np.signedinteger):
+        info = np.iinfo(array.dtype)
+        scale = float(max(abs(info.min), info.max))
+        array = array.astype(np.float64) / scale
     else:
         array = array.astype(np.float64)
     return int(sample_rate), array
