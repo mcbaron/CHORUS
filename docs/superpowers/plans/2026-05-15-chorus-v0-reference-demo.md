@@ -34,6 +34,7 @@
 - Create: `pyproject.toml`
 - Create: `README.md`
 - Create: `src/chorus/__init__.py`
+- Create: `src/chorus/cli.py`
 - Create: `tests/conftest.py`
 
 - [ ] **Step 1: Write the package scaffold**
@@ -102,6 +103,21 @@ Create `src/chorus/__init__.py`:
 __version__ = "0.1.0"
 ```
 
+Create `src/chorus/cli.py`:
+
+```python
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="chorus", description="CHORUS reference demo")
+    parser.parse_args(argv)
+    return 0
+```
+
 Create `tests/conftest.py`:
 
 ```python
@@ -146,15 +162,16 @@ Expected: Poetry creates an environment and installs `numpy`, `scipy`, `PyWavele
 Run:
 
 ```bash
+poetry run chorus --help
 poetry run pytest -q
 ```
 
-Expected: pytest exits with code 5 and prints `no tests ran`. This confirms the scaffold imports before tests are added.
+Expected: `poetry run chorus --help` exits 0 and prints argparse help. Pytest exits with code 5 and prints `no tests ran`. This confirms the scaffold imports before tests are added.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add pyproject.toml README.md src/chorus/__init__.py tests/conftest.py
+git add pyproject.toml README.md src/chorus/__init__.py src/chorus/cli.py tests/conftest.py
 git commit -m "chore: scaffold chorus python package"
 ```
 
@@ -1069,7 +1086,7 @@ git commit -m "feat: add wav io and reports"
 ## Task 7: CLI
 
 **Files:**
-- Create: `src/chorus/cli.py`
+- Modify: `src/chorus/cli.py`
 - Modify: `tests/test_io_cli.py`
 
 - [ ] **Step 1: Add failing CLI test**
@@ -1099,7 +1116,7 @@ Run:
 poetry run pytest tests/test_io_cli.py::test_cli_split_writes_expected_outputs -q
 ```
 
-Expected: FAIL with `ModuleNotFoundError: No module named 'chorus.cli'`.
+Expected: FAIL because the placeholder CLI does not recognize the `split` command.
 
 - [ ] **Step 3: Implement CLI**
 
