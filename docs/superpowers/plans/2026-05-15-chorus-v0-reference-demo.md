@@ -935,7 +935,7 @@ git commit -m "feat: add chorus split processor"
 - Create: `src/chorus/io.py`
 - Test: `tests/test_io_cli.py`
 
-- [ ] **Step 1: Write failing I/O and report tests**
+- [x] **Step 1: Write failing I/O and report tests**
 
 Create `tests/test_io_cli.py`:
 
@@ -983,7 +983,7 @@ def test_wav_read_write_and_report(tmp_path, stereo_identical: np.ndarray, sampl
     assert loaded_report["input"]["sample_rate"] == sample_rate
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -993,7 +993,7 @@ poetry run pytest tests/test_io_cli.py::test_wav_read_write_and_report -q
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'chorus.io'`.
 
-- [ ] **Step 3: Implement I/O helpers**
+- [x] **Step 3: Implement I/O helpers**
 
 Create `src/chorus/io.py`:
 
@@ -1100,7 +1100,7 @@ def build_report(
     }
 ```
 
-- [ ] **Step 4: Run I/O test**
+- [x] **Step 4: Run I/O test**
 
 Run:
 
@@ -1110,7 +1110,7 @@ poetry run pytest tests/test_io_cli.py::test_wav_read_write_and_report -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/io.py tests/test_io_cli.py
