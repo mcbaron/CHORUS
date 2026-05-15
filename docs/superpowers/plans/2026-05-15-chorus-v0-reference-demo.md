@@ -42,26 +42,28 @@
 Create `pyproject.toml`:
 
 ```toml
-[tool.poetry]
+[project]
 name = "chorus"
 version = "0.1.0"
 description = "CHORUS reference demo for reconstructed upmixed stereo contributions"
-authors = ["CHORUS contributors"]
 readme = "README.md"
-packages = [{ include = "chorus", from = "src" }]
+authors = [{ name = "CHORUS contributors" }]
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "numpy>=1.26,<2.0",
+    "scipy>=1.13,<2.0",
+    "PyWavelets>=1.6,<2.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-numpy = "^1.26"
-scipy = "^1.13"
-PyWavelets = "^1.6"
+[project.scripts]
+chorus = "chorus.cli:main"
+
+[tool.poetry]
+packages = [{ include = "chorus", from = "src" }]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"
 ruff = "^0.4"
-
-[tool.poetry.scripts]
-chorus = "chorus.cli:main"
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]
@@ -155,7 +157,7 @@ Run:
 poetry install
 ```
 
-Expected: Poetry creates an environment and installs `numpy`, `scipy`, `PyWavelets`, `pytest`, and `ruff`.
+Expected: Poetry creates an environment, writes `poetry.lock`, and installs `numpy`, `scipy`, `PyWavelets`, `pytest`, and `ruff`.
 
 - [ ] **Step 3: Run the empty test suite**
 
@@ -171,7 +173,7 @@ Expected: `poetry run chorus --help` exits 0 and prints argparse help. Pytest ex
 - [ ] **Step 4: Commit**
 
 ```bash
-git add pyproject.toml README.md src/chorus/__init__.py src/chorus/cli.py tests/conftest.py
+git add pyproject.toml poetry.lock README.md src/chorus/__init__.py src/chorus/cli.py tests/conftest.py
 git commit -m "chore: scaffold chorus python package"
 ```
 
