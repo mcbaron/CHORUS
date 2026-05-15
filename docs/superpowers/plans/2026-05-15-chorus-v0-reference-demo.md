@@ -1252,7 +1252,7 @@ git commit -m "feat: add chorus split cli"
 - Inspect: `src/chorus/*.py`
 - Inspect: `tests/*.py`
 
-- [ ] **Step 1: Update README usage**
+- [x] **Step 1: Update README usage**
 
 Replace `README.md` with:
 
@@ -1287,7 +1287,7 @@ STFT is the reference path. FrFT and wavelet adapters are experimental in v0 and
 The STFT pass-through test is mandatory. If unchanged stereo cannot round-trip through the STFT analyzer/reconstructor within tolerance, the splitter is not considered valid.
 ````
 
-- [ ] **Step 2: Run the full test suite**
+- [x] **Step 2: Run the full test suite**
 
 Run:
 
@@ -1297,7 +1297,7 @@ poetry run pytest -q
 
 Expected: all tests PASS.
 
-- [ ] **Step 3: Run Ruff**
+- [x] **Step 3: Run Ruff**
 
 Run:
 
@@ -1307,7 +1307,7 @@ poetry run ruff check .
 
 Expected: PASS. If Ruff reports import ordering, run `poetry run ruff check . --fix`, inspect the diff, then rerun `poetry run ruff check .`.
 
-- [ ] **Step 4: Run the CLI against a generated fixture**
+- [x] **Step 4: Run the CLI against a generated fixture**
 
 Run:
 
@@ -1329,7 +1329,7 @@ poetry run chorus split tmp/identical.wav --out-dir tmp/chorus-out --transform s
 
 Expected: `tmp/chorus-out/center.wav`, `tmp/chorus-out/only.wav`, `tmp/chorus-out/surround.wav`, and `tmp/chorus-out/report.json` exist.
 
-- [ ] **Step 5: Inspect report reconstruction status**
+- [x] **Step 5: Inspect report reconstruction status**
 
 Run:
 
@@ -1346,7 +1346,7 @@ PY
 
 Expected: printed reconstruction metrics with `"passed": True`.
 
-- [ ] **Step 6: Commit final polish**
+- [x] **Step 6: Commit final polish**
 
 ```bash
 git add README.md src/chorus tests
