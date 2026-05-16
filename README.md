@@ -49,7 +49,7 @@ The STFT pass-through test is mandatory. If unchanged stereo cannot round-trip t
 
 ## Roadmap
 
-v1 will validate and enable FrFT and wavelet adapters. It will also add `report.md` with spectrograms for all upmixed channels.
+v1 adds transform validation, reconstruction-capable FrFT and Wavelet experiments, and report artifacts with spectrograms for all upmixed channels.
 
 v2 will enable the application of arbitrary filters to each upmixed component.
 
