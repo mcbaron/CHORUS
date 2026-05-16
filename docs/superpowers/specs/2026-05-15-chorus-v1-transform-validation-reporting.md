@@ -22,12 +22,11 @@ The primary output addition is a human-readable `report.md` with spectrogram ima
   - `Ls`
   - `Rs`
 - Run FrFT and Wavelet analyzers in comparison mode.
+- FrFT and Wavelet able to write authoritative split stems in v1, default is still STFT
+- FrFT and Wavelet need production-quality inverse reconstruction in v1.
 - Report transform diagnostics without promoting non-STFT transforms to trusted split engines.
 
 ## Non-Goals
-
-- FrFT and Wavelet do not write authoritative split stems in v1.
-- FrFT and Wavelet do not need production-quality inverse reconstruction in v1.
 - v1 does not add contribution filters.
 - v1 does not add plugin or real-time host integration.
 
@@ -110,6 +109,6 @@ v1 is complete when:
 - STFT split output remains compatible with v0 fixtures.
 - CLI output includes `report.md`, `report.json`, and spectrogram images.
 - The report includes input stereo and all six contribution spectrograms.
-- FrFT and Wavelet analyzers run in comparison mode.
+- FrFT and Wavelet analyzers run in comparison mode and have acceptable tolerance reconstruction.
 - Reports do not claim FrFT or Wavelet are authoritative split engines.
 - Test coverage proves deterministic reporting and analyzer metadata behavior.
