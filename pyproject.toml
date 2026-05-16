@@ -9,6 +9,7 @@ dependencies = [
     "numpy>=1.26,<2.0",
     "scipy>=1.13,<2.0",
     "PyWavelets>=1.6,<2.0",
+    "matplotlib>=3.8,<4.0",
 ]
 
 [project.scripts]
