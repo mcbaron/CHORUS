@@ -77,6 +77,30 @@ def test_contributions_reconstruct_input(
     np.testing.assert_allclose(reconstructed, stereo_identical, atol=1e-8, rtol=1e-8)
 
 
+def test_processor_exposes_six_named_contributions(
+    stereo_identical: np.ndarray, sample_rate: int
+) -> None:
+    processor = ChorusProcessor(ChorusConfig(sample_rate=sample_rate, smoothing_alpha=0.0))
+
+    result = processor.process(stereo_identical)
+
+    assert set(result.contributions) == {"Lc", "Rc", "Lo", "Ro", "Ls", "Rs"}
+    for contribution in result.contributions.values():
+        assert contribution.shape == (stereo_identical.shape[0],)
+    np.testing.assert_allclose(
+        result.center,
+        np.column_stack([result.contributions["Lc"], result.contributions["Rc"]]),
+    )
+    np.testing.assert_allclose(
+        result.only,
+        np.column_stack([result.contributions["Lo"], result.contributions["Ro"]]),
+    )
+    np.testing.assert_allclose(
+        result.surround,
+        np.column_stack([result.contributions["Ls"], result.contributions["Rs"]]),
+    )
+
+
 def test_silence_is_stable(sample_rate: int) -> None:
     stereo = np.zeros((4096, 2), dtype=np.float64)
     processor = ChorusProcessor(ChorusConfig(sample_rate=sample_rate))

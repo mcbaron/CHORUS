@@ -24,6 +24,7 @@ class ChorusResult:
     center: np.ndarray
     only: np.ndarray
     surround: np.ndarray
+    contributions: dict[str, np.ndarray]
     metadata: dict[str, object]
 
 
@@ -59,11 +60,20 @@ class ChorusProcessor:
             surround_components, representation.original_shape
         )
         only = self.transform.inverse_components(only_components, representation.original_shape)
+        contributions = {
+            "Lc": center[:, 0],
+            "Rc": center[:, 1],
+            "Lo": only[:, 0],
+            "Ro": only[:, 1],
+            "Ls": surround[:, 0],
+            "Rs": surround[:, 1],
+        }
 
         return ChorusResult(
             center=center,
             only=only,
             surround=surround,
+            contributions=contributions,
             metadata={
                 "sample_rate": self.config.sample_rate,
                 "transform": representation.metadata,
