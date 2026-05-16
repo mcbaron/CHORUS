@@ -78,15 +78,16 @@ def test_contributions_reconstruct_input(
 
 
 def test_processor_exposes_six_named_contributions(
-    stereo_identical: np.ndarray, sample_rate: int
+    sine_440: np.ndarray, sample_rate: int
 ) -> None:
+    stereo = np.column_stack([sine_440, 0.5 * sine_440])
     processor = ChorusProcessor(ChorusConfig(sample_rate=sample_rate, smoothing_alpha=0.0))
 
-    result = processor.process(stereo_identical)
+    result = processor.process(stereo)
 
     assert set(result.contributions) == {"Lc", "Rc", "Lo", "Ro", "Ls", "Rs"}
     for contribution in result.contributions.values():
-        assert contribution.shape == (stereo_identical.shape[0],)
+        assert contribution.shape == (stereo.shape[0],)
     np.testing.assert_allclose(
         result.center,
         np.column_stack([result.contributions["Lc"], result.contributions["Rc"]]),
@@ -99,6 +100,18 @@ def test_processor_exposes_six_named_contributions(
         result.surround,
         np.column_stack([result.contributions["Ls"], result.contributions["Rs"]]),
     )
+
+
+def test_contribution_arrays_do_not_alias_stem_arrays(
+    stereo_identical: np.ndarray, sample_rate: int
+) -> None:
+    processor = ChorusProcessor(ChorusConfig(sample_rate=sample_rate, smoothing_alpha=0.0))
+    result = processor.process(stereo_identical)
+    original_center_left = result.center[0, 0]
+
+    result.contributions["Lc"][0] = original_center_left + 1.0
+
+    assert result.center[0, 0] == original_center_left
 
 
 def test_silence_is_stable(sample_rate: int) -> None:

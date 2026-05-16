@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -24,8 +24,8 @@ class ChorusResult:
     center: np.ndarray
     only: np.ndarray
     surround: np.ndarray
-    contributions: dict[str, np.ndarray]
     metadata: dict[str, object]
+    contributions: dict[str, np.ndarray] = field(default_factory=dict)
 
 
 class ChorusProcessor:
@@ -61,25 +61,25 @@ class ChorusProcessor:
         )
         only = self.transform.inverse_components(only_components, representation.original_shape)
         contributions = {
-            "Lc": center[:, 0],
-            "Rc": center[:, 1],
-            "Lo": only[:, 0],
-            "Ro": only[:, 1],
-            "Ls": surround[:, 0],
-            "Rs": surround[:, 1],
+            "Lc": center[:, 0].copy(),
+            "Rc": center[:, 1].copy(),
+            "Lo": only[:, 0].copy(),
+            "Ro": only[:, 1].copy(),
+            "Ls": surround[:, 0].copy(),
+            "Rs": surround[:, 1].copy(),
         }
 
         return ChorusResult(
             center=center,
             only=only,
             surround=surround,
-            contributions=contributions,
             metadata={
                 "sample_rate": self.config.sample_rate,
                 "transform": representation.metadata,
                 "smoothing_alpha": self.config.smoothing_alpha,
                 "epsilon": self.config.epsilon,
             },
+            contributions=contributions,
         )
 
     def _estimate_channel(self, prototype: np.ndarray, source: np.ndarray) -> np.ndarray:
