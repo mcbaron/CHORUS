@@ -498,7 +498,7 @@ git commit -m "feat: filter chorus contributions in core"
 - Modify: `src/chorus/cli.py`
 - Modify: `tests/test_io_cli.py`
 
-- [ ] **Step 1: Write failing CLI filter config test**
+- [x] **Step 1: Write failing CLI filter config test**
 
 Append to `tests/test_io_cli.py`:
 
@@ -546,7 +546,7 @@ def test_cli_split_rejects_invalid_filter_config_before_writing_outputs(
     assert not out_dir.exists()
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -556,7 +556,7 @@ poetry run pytest tests/test_io_cli.py::test_cli_split_accepts_filter_config -q
 
 Expected: FAIL because `--filters` is not accepted.
 
-- [ ] **Step 3: Add CLI config loading**
+- [x] **Step 3: Add CLI config loading**
 
 In `src/chorus/cli.py`, add to the split parser:
 
@@ -581,7 +581,7 @@ Before constructing `ChorusConfig`, load filters:
 
 Pass `filter_chains=filter_chains` into `ChorusConfig`.
 
-- [ ] **Step 4: Run CLI tests**
+- [x] **Step 4: Run CLI tests**
 
 Run:
 
@@ -591,7 +591,7 @@ poetry run pytest tests/test_io_cli.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/cli.py tests/test_io_cli.py

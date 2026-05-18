@@ -141,3 +141,50 @@ def test_cli_split_writes_expected_outputs(
     report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
     assert "transform_analysis" in report
     assert "spectrograms" in report
+
+
+def test_cli_split_accepts_filter_config(
+    tmp_path, stereo_identical: np.ndarray, sample_rate: int
+) -> None:
+    input_path = tmp_path / "input.wav"
+    out_dir = tmp_path / "out"
+    filters_path = tmp_path / "filters.json"
+    wavfile.write(input_path, sample_rate, stereo_identical.astype(np.float32))
+    filters_path.write_text(
+        json.dumps({"Lc": [{"type": "gain", "db": -6.0}]}), encoding="utf-8"
+    )
+
+    exit_code = main(
+        [
+            "split",
+            str(input_path),
+            "--out-dir",
+            str(out_dir),
+            "--transform",
+            "stft",
+            "--filters",
+            str(filters_path),
+        ]
+    )
+
+    assert exit_code == 0
+    report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    assert report["filters"]["transparent"] is False
+    assert report["filters"]["chains"]["Lc"][0]["type"] == "gain"
+
+
+def test_cli_split_rejects_invalid_filter_config_before_writing_outputs(
+    tmp_path, stereo_identical: np.ndarray, sample_rate: int
+) -> None:
+    input_path = tmp_path / "input.wav"
+    out_dir = tmp_path / "out"
+    filters_path = tmp_path / "filters.json"
+    wavfile.write(input_path, sample_rate, stereo_identical.astype(np.float32))
+    filters_path.write_text(
+        json.dumps({"bad": [{"type": "gain", "db": 1.0}]}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="unknown contribution"):
+        main(["split", str(input_path), "--out-dir", str(out_dir), "--filters", str(filters_path)])
+
+    assert not out_dir.exists()
