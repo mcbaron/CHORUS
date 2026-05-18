@@ -45,7 +45,9 @@ STFT remains the default reference transform. FrFT and Wavelet can be selected f
 
 ## Acceptance Gate
 
-The STFT pass-through test is mandatory. If unchanged stereo cannot round-trip through the STFT analyzer/reconstructor within tolerance, the splitter is not considered valid.
+Transform pass-through tests are mandatory. If unchanged stereo cannot round-trip through the STFT, FrFT, and Wavelet analyzer/reconstructor paths within tolerance, v1 transform validation is not considered valid.
+
+STFT remains the trusted split path. FrFT and Wavelet passing the round-trip gate means they are reconstruction-capable research transforms, not promoted production split engines.
 
 ## Roadmap
 

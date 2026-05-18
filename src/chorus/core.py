@@ -6,7 +6,7 @@ import numpy as np
 
 from chorus.estimation import SmoothedScalarEstimator
 from chorus.prototypes import center_prototype, surround_prototype
-from chorus.transforms import STFTConfig, STFTTransform
+from chorus.transforms import FrFTTransform, STFTConfig, STFTTransform, WaveletTransform
 
 
 @dataclass(frozen=True)
@@ -30,10 +30,15 @@ class ChorusResult:
 
 class ChorusProcessor:
     def __init__(self, config: ChorusConfig) -> None:
-        if config.transform != "stft":
-            raise NotImplementedError("full splitting is supported only for STFT in v0")
         self.config = config
-        self.transform = STFTTransform(STFTConfig(config.frame_size, config.hop_size))
+        if config.transform == "stft":
+            self.transform = STFTTransform(STFTConfig(config.frame_size, config.hop_size))
+        elif config.transform == "frft":
+            self.transform = FrFTTransform()
+        elif config.transform == "wavelet":
+            self.transform = WaveletTransform()
+        else:
+            raise ValueError(f"unsupported transform {config.transform!r}")
 
     def process(self, stereo: np.ndarray) -> ChorusResult:
         representation = self.transform.forward(stereo)
@@ -87,7 +92,7 @@ class ChorusProcessor:
             alpha=self.config.smoothing_alpha,
             epsilon=self.config.epsilon,
         )
-        output = np.empty_like(source)
+        output = np.empty(source.shape, dtype=np.result_type(prototype, source, np.complex128))
         for frame_index in range(source.shape[-1]):
             output[..., frame_index], _weights = estimator.estimate(
                 prototype[..., frame_index],

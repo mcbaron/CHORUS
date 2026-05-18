@@ -5,7 +5,7 @@ from typing import Protocol
 
 import numpy as np
 import pywt
-from scipy.fft import fft
+from scipy.fft import fft, ifft
 from scipy.signal import ShortTimeFFT
 
 
@@ -123,7 +123,19 @@ class FrFTTransform:
         )
 
     def inverse(self, representation: TransformRepresentation) -> np.ndarray:
-        raise NotImplementedError("FrFT full splitting is experimental and unsupported in v0")
+        phase = np.exp(-0.5j * np.pi * self.order)
+        channels = ifft(representation.data / phase, axis=-1).real
+        return channels.T[: representation.original_shape[0], :]
+
+    def inverse_components(
+        self, components: np.ndarray, original_shape: tuple[int, int]
+    ) -> np.ndarray:
+        representation = TransformRepresentation(
+            data=components,
+            original_shape=original_shape,
+            metadata={"transform": "frft", "order": self.order, "experimental": True},
+        )
+        return self.inverse(representation)
 
 
 class WaveletTransform:
@@ -153,4 +165,22 @@ class WaveletTransform:
         )
 
     def inverse(self, representation: TransformRepresentation) -> np.ndarray:
-        raise NotImplementedError("Wavelet full splitting is experimental and unsupported in v0")
+        coeff_slices = representation.metadata["coeff_slices"]
+        channels = []
+        for channel_data, slices in zip(representation.data, coeff_slices, strict=True):
+            coeffs = pywt.array_to_coeffs(channel_data, slices, output_format="wavedec")
+            reconstructed = pywt.waverec(coeffs, self.wavelet, mode="periodization")
+            channels.append(reconstructed[: representation.original_shape[0]])
+        return np.column_stack(channels)
+
+    def inverse_components(
+        self, components: np.ndarray, original_shape: tuple[int, int]
+    ) -> np.ndarray:
+        original = np.zeros(original_shape, dtype=np.float64)
+        representation = self.forward(original)
+        representation = TransformRepresentation(
+            data=components,
+            original_shape=original_shape,
+            metadata=representation.metadata,
+        )
+        return self.inverse(representation)

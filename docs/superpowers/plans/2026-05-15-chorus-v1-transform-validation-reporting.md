@@ -77,7 +77,7 @@ Every `chorus split` run writes:
 - `spectrograms/Ls.png`
 - `spectrograms/Rs.png`
 
-STFT remains the default reference transform. FrFT and Wavelet can be selected for v1 reconstruction experiments, but reports label them separately from the STFT reference path.
+STFT remains the default reference transform. FrFT and Wavelet can be selected for v1 reconstruction experiments only after passing the same unchanged-stereo round-trip gate as STFT, and reports label them separately from the STFT reference path.
 ```
 
 - [x] **Step 4: Commit**
@@ -186,7 +186,7 @@ git commit -m "feat: expose chorus contribution signals"
 - Modify: `src/chorus/transforms.py`
 - Modify: `tests/test_transforms.py`
 
-- [ ] **Step 1: Write failing transform round-trip tests**
+- [x] **Step 1: Write failing transform round-trip tests**
 
 Append to `tests/test_transforms.py`:
 
@@ -208,10 +208,10 @@ def test_wavelet_round_trip_pass_through_stereo(stereo_identical: np.ndarray) ->
     reconstructed = transform.inverse(representation)
 
     assert reconstructed.shape == stereo_identical.shape
-    np.testing.assert_allclose(reconstructed, stereo_identical, atol=1e-8, rtol=1e-8)
+    np.testing.assert_allclose(reconstructed, stereo_identical, atol=1e-10, rtol=1e-10)
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -221,7 +221,7 @@ poetry run pytest tests/test_transforms.py::test_frft_round_trip_pass_through_st
 
 Expected: FAIL with `NotImplementedError`.
 
-- [ ] **Step 3: Add inverse and component inverse support**
+- [x] **Step 3: Add inverse and component inverse support**
 
 In `src/chorus/transforms.py`, add imports:
 
@@ -277,7 +277,7 @@ Replace `WaveletTransform.inverse()` with:
         return self.inverse(representation)
 ```
 
-- [ ] **Step 4: Run focused transform tests**
+- [x] **Step 4: Run focused transform tests**
 
 Run:
 
@@ -287,7 +287,7 @@ poetry run pytest tests/test_transforms.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/transforms.py tests/test_transforms.py
@@ -300,7 +300,7 @@ git commit -m "feat: add invertible research transforms"
 - Modify: `src/chorus/core.py`
 - Modify: `tests/test_core.py`
 
-- [ ] **Step 1: Write selectable transform tests**
+- [x] **Step 1: Write selectable transform tests**
 
 Append to `tests/test_core.py`:
 
@@ -322,7 +322,7 @@ def test_processor_can_run_reconstruction_capable_research_transforms(
 
 Add `import pytest` near the top of `tests/test_core.py`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -332,7 +332,7 @@ poetry run pytest tests/test_core.py::test_processor_can_run_reconstruction_capa
 
 Expected: FAIL with `NotImplementedError` from the core constructor.
 
-- [ ] **Step 3: Select transform classes in the core**
+- [x] **Step 3: Select transform classes in the core**
 
 In `src/chorus/core.py`, update imports:
 
@@ -355,7 +355,7 @@ Replace the constructor with:
             raise ValueError(f"unsupported transform {config.transform!r}")
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 
@@ -365,7 +365,7 @@ poetry run pytest tests/test_core.py tests/test_transforms.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/core.py tests/test_core.py
@@ -378,7 +378,7 @@ git commit -m "feat: enable selectable chorus transforms"
 - Create: `src/chorus/reporting.py`
 - Create: `tests/test_reporting.py`
 
-- [ ] **Step 1: Write failing spectrogram tests**
+- [x] **Step 1: Write failing spectrogram tests**
 
 Create `tests/test_reporting.py`:
 
@@ -405,7 +405,7 @@ def test_render_spectrograms_writes_deterministic_artifacts(
         assert path.stat().st_size > 0
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -415,7 +415,7 @@ poetry run pytest tests/test_reporting.py::test_render_spectrograms_writes_deter
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'chorus.reporting'`.
 
-- [ ] **Step 3: Implement deterministic spectrogram rendering**
+- [x] **Step 3: Implement deterministic spectrogram rendering**
 
 Create `src/chorus/reporting.py`:
 
@@ -466,7 +466,7 @@ def render_spectrograms(
     return artifacts
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run:
 
@@ -476,7 +476,7 @@ poetry run pytest tests/test_reporting.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/reporting.py tests/test_reporting.py
@@ -489,7 +489,7 @@ git commit -m "feat: render chorus spectrogram artifacts"
 - Modify: `src/chorus/reporting.py`
 - Modify: `tests/test_reporting.py`
 
-- [ ] **Step 1: Write failing analyzer metadata tests**
+- [x] **Step 1: Write failing analyzer metadata tests**
 
 Append to `tests/test_reporting.py`:
 
@@ -515,7 +515,7 @@ def test_analyze_transforms_records_reconstruction_metrics(
         assert analyzer["duration_seconds"] >= 0.0
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -525,7 +525,7 @@ poetry run pytest tests/test_reporting.py::test_analyze_transforms_records_recon
 
 Expected: FAIL with `ImportError` because `analyze_transforms` does not exist.
 
-- [ ] **Step 3: Implement analyzer metadata**
+- [x] **Step 3: Implement analyzer metadata**
 
 Append to `src/chorus/reporting.py`:
 
@@ -581,7 +581,7 @@ def analyze_transforms(sample_rate: int, input_audio: np.ndarray) -> dict[str, d
     return analysis
 ```
 
-- [ ] **Step 4: Run focused reporting tests**
+- [x] **Step 4: Run focused reporting tests**
 
 Run:
 
@@ -591,7 +591,7 @@ poetry run pytest tests/test_reporting.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/reporting.py tests/test_reporting.py
@@ -605,7 +605,7 @@ git commit -m "feat: add transform analyzer metadata"
 - Modify: `src/chorus/io.py`
 - Modify: `tests/test_reporting.py`
 
-- [ ] **Step 1: Write failing report assembly test**
+- [x] **Step 1: Write failing report assembly test**
 
 Append to `tests/test_reporting.py`:
 
@@ -636,7 +636,7 @@ def test_v1_report_includes_spectrograms_analyzers_and_markdown(
     assert "Wavelet" in text
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -646,7 +646,7 @@ poetry run pytest tests/test_reporting.py::test_v1_report_includes_spectrograms_
 
 Expected: FAIL with missing imports.
 
-- [ ] **Step 3: Move report assembly to `reporting.py`**
+- [x] **Step 3: Move report assembly to `reporting.py`**
 
 Add to `src/chorus/reporting.py`:
 
@@ -753,7 +753,7 @@ def build_report(
     return build_v1_report(input_path, output_dir, sample_rate, input_audio, result, stem_paths)
 ```
 
-- [ ] **Step 4: Run reporting tests**
+- [x] **Step 4: Run reporting tests**
 
 Run:
 
@@ -763,7 +763,7 @@ poetry run pytest tests/test_reporting.py tests/test_io_cli.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/reporting.py src/chorus/io.py tests/test_reporting.py
@@ -776,7 +776,7 @@ git commit -m "feat: write chorus v1 reports"
 - Modify: `src/chorus/cli.py`
 - Modify: `tests/test_io_cli.py`
 
-- [ ] **Step 1: Extend the CLI integration test**
+- [x] **Step 1: Extend the CLI integration test**
 
 In `tests/test_io_cli.py`, extend `test_cli_split_writes_expected_outputs`:
 
@@ -790,7 +790,7 @@ In `tests/test_io_cli.py`, extend `test_cli_split_writes_expected_outputs`:
     assert "spectrograms" in report
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -800,7 +800,7 @@ poetry run pytest tests/test_io_cli.py::test_cli_split_writes_expected_outputs -
 
 Expected: FAIL because `report.md` is not written.
 
-- [ ] **Step 3: Write the Markdown report from the CLI**
+- [x] **Step 3: Write the Markdown report from the CLI**
 
 In `src/chorus/cli.py`, add:
 
@@ -814,7 +814,7 @@ After writing `report.json`, add:
         write_markdown_report(args.out_dir, report)
 ```
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
 
 Run:
 
@@ -825,7 +825,7 @@ poetry run ruff check .
 
 Expected: all tests pass and Ruff reports no violations.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/cli.py tests/test_io_cli.py

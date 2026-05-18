@@ -37,6 +37,7 @@ v3 ports the Python reference semantics into Rust and embeds that core in JUCE. 
 ### v1 Promotion Gate
 
 - STFT v0 split output remains correct.
+- STFT, FrFT, and Wavelet pass unchanged-stereo round-trip checks within tolerance.
 - `report.md` and associated plot artifacts are generated deterministically.
 - FrFT and Wavelet diagnostics run without claiming production splitting support.
 - Transform comparison metrics are clear enough to decide whether a non-STFT path should be promoted later.

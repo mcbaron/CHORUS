@@ -134,3 +134,10 @@ def test_cli_split_writes_expected_outputs(
     assert (out_dir / "only.wav").exists()
     assert (out_dir / "surround.wav").exists()
     assert (out_dir / "report.json").exists()
+    assert (out_dir / "report.md").exists()
+    assert (out_dir / "spectrograms" / "input_left.png").exists()
+    assert (out_dir / "spectrograms" / "input_right.png").exists()
+    assert (out_dir / "spectrograms" / "Lc.png").exists()
+    report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    assert "transform_analysis" in report
+    assert "spectrograms" in report

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.io import build_report, read_stereo_wav, write_stems
+from chorus.reporting import write_markdown_report
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -51,6 +52,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         report_path = args.out_dir / "report.json"
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        write_markdown_report(args.out_dir, report)
         return 0
 
     parser.error(f"unsupported command {args.command}")

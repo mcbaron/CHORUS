@@ -49,6 +49,16 @@ def test_experimental_frft_adapter_smoke(stereo_identical: np.ndarray) -> None:
     assert representation.metadata["transform"] == "frft"
 
 
+def test_frft_round_trip_pass_through_stereo(stereo_identical: np.ndarray) -> None:
+    transform = FrFTTransform(order=0.75)
+
+    representation = transform.forward(stereo_identical)
+    reconstructed = transform.inverse(representation)
+
+    assert reconstructed.shape == stereo_identical.shape
+    np.testing.assert_allclose(reconstructed, stereo_identical, atol=1e-10, rtol=1e-10)
+
+
 def test_experimental_wavelet_adapter_smoke(stereo_identical: np.ndarray) -> None:
     transform = WaveletTransform(wavelet="db4", level=3)
 
@@ -57,3 +67,13 @@ def test_experimental_wavelet_adapter_smoke(stereo_identical: np.ndarray) -> Non
     assert representation.data.shape[0] == 2
     assert representation.metadata["experimental"] is True
     assert representation.metadata["transform"] == "wavelet"
+
+
+def test_wavelet_round_trip_pass_through_stereo(stereo_identical: np.ndarray) -> None:
+    transform = WaveletTransform(wavelet="db4", level=3)
+
+    representation = transform.forward(stereo_identical)
+    reconstructed = transform.inverse(representation)
+
+    assert reconstructed.shape == stereo_identical.shape
+    np.testing.assert_allclose(reconstructed, stereo_identical, atol=1e-10, rtol=1e-10)
