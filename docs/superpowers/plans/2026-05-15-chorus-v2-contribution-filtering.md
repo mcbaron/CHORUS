@@ -604,7 +604,7 @@ git commit -m "feat: load contribution filter configs"
 - Modify: `src/chorus/reporting.py`
 - Modify: `tests/test_reporting.py`
 
-- [ ] **Step 1: Write failing report metadata test**
+- [x] **Step 1: Write failing report metadata test**
 
 Append to `tests/test_reporting.py`:
 
@@ -635,7 +635,7 @@ def test_report_records_filter_chains_and_filtered_output_status(
     assert report["checks"]["reconstruction"]["reference"] == "v1-transparent"
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -645,7 +645,7 @@ poetry run pytest tests/test_reporting.py::test_report_records_filter_chains_and
 
 Expected: FAIL because filter report fields are missing.
 
-- [ ] **Step 3: Add filter data to reports**
+- [x] **Step 3: Add filter data to reports**
 
 In `src/chorus/reporting.py`, add imports:
 
@@ -695,7 +695,7 @@ In `write_markdown_report()`, add after output stems:
         lines.append(f"- {name}: `{chain}`")
 ```
 
-- [ ] **Step 4: Run reporting tests**
+- [x] **Step 4: Run reporting tests**
 
 Run:
 
@@ -705,7 +705,7 @@ poetry run pytest tests/test_reporting.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/reporting.py tests/test_reporting.py
