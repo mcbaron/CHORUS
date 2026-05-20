@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from chorus.core import ChorusConfig, ChorusProcessor
+from chorus.filters import normalize_filter_config
 from chorus.io import build_report, read_stereo_wav, write_stems
 from chorus.reporting import write_markdown_report
 
@@ -22,6 +23,7 @@ def _build_parser() -> argparse.ArgumentParser:
     split.add_argument("--hop-size", type=int, default=512)
     split.add_argument("--smoothing-alpha", type=float, default=0.9)
     split.add_argument("--epsilon", type=float, default=1e-9)
+    split.add_argument("--filters", type=Path, default=None)
     return parser
 
 
@@ -31,6 +33,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "split":
         sample_rate, audio = read_stereo_wav(args.input)
+        raw_filters = None
+        if args.filters is not None:
+            raw_filters = json.loads(args.filters.read_text(encoding="utf-8"))
+        filter_chains = normalize_filter_config(raw_filters, sample_rate=sample_rate)
         config = ChorusConfig(
             sample_rate=sample_rate,
             transform=args.transform,
@@ -38,6 +44,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             hop_size=args.hop_size,
             smoothing_alpha=args.smoothing_alpha,
             epsilon=args.epsilon,
+            filter_chains=filter_chains,
         )
         processor = ChorusProcessor(config)
         result = processor.process(audio)
@@ -50,6 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             result=result,
             stem_paths=stem_paths,
         )
+        report["filters"] = result.metadata["filters"]
         report_path = args.out_dir / "report.json"
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         write_markdown_report(args.out_dir, report)

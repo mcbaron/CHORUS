@@ -40,7 +40,7 @@ Expected: `src/chorus/reporting.py` exists, `tests/test_reporting.py` exists, `C
 - Create: `src/chorus/filters.py`
 - Create: `tests/test_filters.py`
 
-- [ ] **Step 1: Write failing validation tests**
+- [x] **Step 1: Write failing validation tests**
 
 Create `tests/test_filters.py`:
 
@@ -89,7 +89,7 @@ def test_invalid_eq_parameters_fail_validation(raw: dict, message: str) -> None:
         normalize_filter_config(raw, sample_rate=48_000)
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -99,7 +99,7 @@ poetry run pytest tests/test_filters.py -q
 
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Implement filter specs and validation**
+- [x] **Step 3: Implement filter specs and validation**
 
 Create `src/chorus/filters.py`:
 
@@ -172,7 +172,7 @@ def normalize_filter_config(
     return chains
 ```
 
-- [ ] **Step 4: Run validation tests**
+- [x] **Step 4: Run validation tests**
 
 Run:
 
@@ -182,7 +182,7 @@ poetry run pytest tests/test_filters.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/filters.py tests/test_filters.py
@@ -195,7 +195,7 @@ git commit -m "feat: add contribution filter validation"
 - Modify: `src/chorus/filters.py`
 - Modify: `tests/test_filters.py`
 
-- [ ] **Step 1: Write failing filter behavior tests**
+- [x] **Step 1: Write failing filter behavior tests**
 
 Append to `tests/test_filters.py`:
 
@@ -257,7 +257,7 @@ def test_solo_mutes_non_solo_contributions() -> None:
     assert report["soloed"] == ["Lo"]
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -267,7 +267,7 @@ poetry run pytest tests/test_filters.py::test_unity_filter_returns_matching_cont
 
 Expected: FAIL because `apply_filter_chains` does not exist.
 
-- [ ] **Step 3: Implement filter application**
+- [x] **Step 3: Implement filter application**
 
 Append to `src/chorus/filters.py`:
 
@@ -353,7 +353,7 @@ def apply_filter_chains(
     }
 ```
 
-- [ ] **Step 4: Run filter tests**
+- [x] **Step 4: Run filter tests**
 
 Run:
 
@@ -363,7 +363,7 @@ poetry run pytest tests/test_filters.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/filters.py tests/test_filters.py
@@ -376,7 +376,7 @@ git commit -m "feat: apply contribution filter chains"
 - Modify: `src/chorus/core.py`
 - Modify: `tests/test_core.py`
 
-- [ ] **Step 1: Write failing core filter tests**
+- [x] **Step 1: Write failing core filter tests**
 
 Append to `tests/test_core.py`:
 
@@ -415,7 +415,7 @@ def test_gain_filter_changes_only_target_contribution(
     assert not np.allclose(result.contributions["Lc"], result.contributions["Rc"])
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -425,7 +425,7 @@ poetry run pytest tests/test_core.py::test_unity_filter_chains_match_unfiltered_
 
 Expected: FAIL because `ChorusConfig` has no `filter_chains`.
 
-- [ ] **Step 3: Wire filter chains into core processing**
+- [x] **Step 3: Wire filter chains into core processing**
 
 In `src/chorus/core.py`, add imports:
 
@@ -475,7 +475,7 @@ Set the result contributions to `filtered_contributions` and include metadata:
                 "filters": filter_report,
 ```
 
-- [ ] **Step 4: Run core and filter tests**
+- [x] **Step 4: Run core and filter tests**
 
 Run:
 
@@ -485,7 +485,7 @@ poetry run pytest tests/test_filters.py tests/test_core.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/core.py tests/test_core.py
@@ -498,7 +498,7 @@ git commit -m "feat: filter chorus contributions in core"
 - Modify: `src/chorus/cli.py`
 - Modify: `tests/test_io_cli.py`
 
-- [ ] **Step 1: Write failing CLI filter config test**
+- [x] **Step 1: Write failing CLI filter config test**
 
 Append to `tests/test_io_cli.py`:
 
@@ -546,7 +546,7 @@ def test_cli_split_rejects_invalid_filter_config_before_writing_outputs(
     assert not out_dir.exists()
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -556,7 +556,7 @@ poetry run pytest tests/test_io_cli.py::test_cli_split_accepts_filter_config -q
 
 Expected: FAIL because `--filters` is not accepted.
 
-- [ ] **Step 3: Add CLI config loading**
+- [x] **Step 3: Add CLI config loading**
 
 In `src/chorus/cli.py`, add to the split parser:
 
@@ -581,7 +581,7 @@ Before constructing `ChorusConfig`, load filters:
 
 Pass `filter_chains=filter_chains` into `ChorusConfig`.
 
-- [ ] **Step 4: Run CLI tests**
+- [x] **Step 4: Run CLI tests**
 
 Run:
 
@@ -591,7 +591,7 @@ poetry run pytest tests/test_io_cli.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/cli.py tests/test_io_cli.py
@@ -604,7 +604,7 @@ git commit -m "feat: load contribution filter configs"
 - Modify: `src/chorus/reporting.py`
 - Modify: `tests/test_reporting.py`
 
-- [ ] **Step 1: Write failing report metadata test**
+- [x] **Step 1: Write failing report metadata test**
 
 Append to `tests/test_reporting.py`:
 
@@ -635,7 +635,7 @@ def test_report_records_filter_chains_and_filtered_output_status(
     assert report["checks"]["reconstruction"]["reference"] == "v1-transparent"
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -645,7 +645,7 @@ poetry run pytest tests/test_reporting.py::test_report_records_filter_chains_and
 
 Expected: FAIL because filter report fields are missing.
 
-- [ ] **Step 3: Add filter data to reports**
+- [x] **Step 3: Add filter data to reports**
 
 In `src/chorus/reporting.py`, add imports:
 
@@ -695,7 +695,7 @@ In `write_markdown_report()`, add after output stems:
         lines.append(f"- {name}: `{chain}`")
 ```
 
-- [ ] **Step 4: Run reporting tests**
+- [x] **Step 4: Run reporting tests**
 
 Run:
 
@@ -705,7 +705,7 @@ poetry run pytest tests/test_reporting.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/chorus/reporting.py tests/test_reporting.py
@@ -717,7 +717,7 @@ git commit -m "feat: report contribution filters"
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Add filter usage docs**
+- [x] **Step 1: Add filter usage docs**
 
 Append to `README.md`:
 
@@ -746,7 +746,7 @@ poetry run chorus split input.wav --out-dir out --filters filters.json
 Valid contribution names are `Lc`, `Rc`, `Lo`, `Ro`, `Ls`, and `Rs`. Invalid contribution names, unsupported filter types, and invalid parameter ranges fail before output audio is written.
 ```
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
 Run:
 
@@ -757,7 +757,7 @@ poetry run ruff check .
 
 Expected: all tests pass and Ruff reports no violations.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md

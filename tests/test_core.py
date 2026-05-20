@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from chorus.core import ChorusConfig, ChorusProcessor
+from chorus.filters import normalize_filter_config
 
 
 def _rms(values: np.ndarray) -> float:
@@ -128,6 +129,39 @@ def test_processor_can_run_reconstruction_capable_research_transforms(
     assert result.metadata["transform"]["transform"] == transform_name
     reconstructed = result.center + result.only + result.surround
     np.testing.assert_allclose(reconstructed, stereo_identical, atol=1e-6, rtol=1e-6)
+
+
+def test_unity_filter_chains_match_unfiltered_v1_output(
+    stereo_identical: np.ndarray, sample_rate: int
+) -> None:
+    baseline = ChorusProcessor(
+        ChorusConfig(sample_rate=sample_rate, smoothing_alpha=0.0)
+    ).process(stereo_identical)
+    filtered = ChorusProcessor(
+        ChorusConfig(
+            sample_rate=sample_rate,
+            smoothing_alpha=0.0,
+            filter_chains=normalize_filter_config(None),
+        )
+    ).process(stereo_identical)
+
+    np.testing.assert_allclose(filtered.center, baseline.center, atol=1e-10)
+    np.testing.assert_allclose(filtered.only, baseline.only, atol=1e-10)
+    np.testing.assert_allclose(filtered.surround, baseline.surround, atol=1e-10)
+    assert filtered.metadata["filters"]["transparent"] is True
+
+
+def test_gain_filter_changes_only_target_contribution(
+    stereo_identical: np.ndarray, sample_rate: int
+) -> None:
+    chains = normalize_filter_config({"Lc": [{"type": "gain", "db": -6.0}]})
+    result = ChorusProcessor(
+        ChorusConfig(sample_rate=sample_rate, smoothing_alpha=0.0, filter_chains=chains)
+    ).process(stereo_identical)
+
+    assert result.metadata["filters"]["transparent"] is False
+    assert result.contributions["Lc"].shape == result.contributions["Rc"].shape
+    assert not np.allclose(result.contributions["Lc"], result.contributions["Rc"])
 
 
 def test_silence_is_stable(sample_rate: int) -> None:

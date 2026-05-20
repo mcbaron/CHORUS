@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from chorus.estimation import SmoothedScalarEstimator
+from chorus.filters import FilterChains, apply_filter_chains, normalize_filter_config
 from chorus.prototypes import center_prototype, surround_prototype
 from chorus.transforms import FrFTTransform, STFTConfig, STFTTransform, WaveletTransform
 
@@ -17,6 +18,7 @@ class ChorusConfig:
     hop_size: int = 512
     smoothing_alpha: float = 0.9
     epsilon: float = 1e-9
+    filter_chains: FilterChains | None = None
 
 
 @dataclass(frozen=True)
@@ -65,14 +67,23 @@ class ChorusProcessor:
             surround_components, representation.original_shape
         )
         only = self.transform.inverse_components(only_components, representation.original_shape)
-        contributions = {
-            "Lc": center[:, 0].copy(),
-            "Rc": center[:, 1].copy(),
-            "Lo": only[:, 0].copy(),
-            "Ro": only[:, 1].copy(),
-            "Ls": surround[:, 0].copy(),
-            "Rs": surround[:, 1].copy(),
+        raw_contributions = {
+            "Lc": center[:, 0],
+            "Rc": center[:, 1],
+            "Lo": only[:, 0],
+            "Ro": only[:, 1],
+            "Ls": surround[:, 0],
+            "Rs": surround[:, 1],
         }
+        filter_chains = self.config.filter_chains or normalize_filter_config(None)
+        contributions, filter_report = apply_filter_chains(
+            raw_contributions,
+            filter_chains,
+            self.config.sample_rate,
+        )
+        center = np.column_stack([contributions["Lc"], contributions["Rc"]])
+        only = np.column_stack([contributions["Lo"], contributions["Ro"]])
+        surround = np.column_stack([contributions["Ls"], contributions["Rs"]])
 
         return ChorusResult(
             center=center,
@@ -83,6 +94,7 @@ class ChorusProcessor:
                 "transform": representation.metadata,
                 "smoothing_alpha": self.config.smoothing_alpha,
                 "epsilon": self.config.epsilon,
+                "filters": filter_report,
             },
             contributions=contributions,
         )

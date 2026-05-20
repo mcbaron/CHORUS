@@ -56,3 +56,26 @@ v1 adds transform validation, reconstruction-capable FrFT and Wavelet experiment
 v2 will enable the application of arbitrary filters to each upmixed component.
 
 v3 will be a rewrite in Rust with VST/JUCE/AU/CLAP plugin integration.
+
+## v2 Contribution Filters
+
+Filters are configured per reconstructed contribution:
+
+```json
+{
+  "Lc": [{"type": "gain", "db": -6.0}],
+  "Rc": [{"type": "unity"}],
+  "Lo": [{"type": "eq", "mode": "highpass", "frequency_hz": 120.0, "q": 0.707}],
+  "Ro": [{"type": "polarity"}],
+  "Ls": [{"type": "mute"}],
+  "Rs": [{"type": "solo"}]
+}
+```
+
+Run:
+
+```bash
+poetry run chorus split input.wav --out-dir out --filters filters.json
+```
+
+Valid contribution names are `Lc`, `Rc`, `Lo`, `Ro`, `Ls`, and `Rs`. Invalid contribution names, unsupported filter types, and invalid parameter ranges fail before output audio is written.

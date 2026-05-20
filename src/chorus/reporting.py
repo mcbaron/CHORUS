@@ -122,6 +122,14 @@ def build_v1_report(
     transform_analysis = analyze_transforms(sample_rate, input_audio)
     reconstructed = result.center + result.only + result.surround
     residual = _residual_summary(input_audio, reconstructed)
+    filter_report = result.metadata.get("filters", {"transparent": True})
+    filter_transparent = bool(filter_report.get("transparent", True))
+    report_warnings = [
+        "STFT remains the default reference path in v1",
+        "FrFT and Wavelet are reconstruction-capable but experimental in v1",
+    ]
+    if not filter_transparent:
+        report_warnings.append("Contribution filters intentionally altered the output")
     return {
         "input": {
             "path": str(input_path),
@@ -134,6 +142,7 @@ def build_v1_report(
             "stems": {name: str(path) for name, path in stem_paths.items()},
         },
         "settings": result.metadata,
+        "filters": filter_report,
         "levels": {
             "center": level_metrics(result.center),
             "only": level_metrics(result.only),
@@ -144,16 +153,17 @@ def build_v1_report(
         },
         "checks": {
             "reconstruction": {
-                "passed": bool(residual["max_abs"] <= 1e-6),
+                "passed": bool(residual["max_abs"] <= 1e-6 and filter_transparent),
                 **residual,
+            },
+            "filtered_output": {
+                "transparent": filter_transparent,
+                "intentionally_altered": not filter_transparent,
             },
         },
         "spectrograms": {name: str(path) for name, path in spectrograms.items()},
         "transform_analysis": transform_analysis,
-        "warnings": [
-            "STFT remains the default reference path in v1",
-            "FrFT and Wavelet are reconstruction-capable but experimental in v1",
-        ],
+        "warnings": report_warnings,
     }
 
 
@@ -165,6 +175,8 @@ def write_markdown_report(output_dir: str | Path, report: dict[str, object]) -> 
     path = Path(output_dir) / "report.md"
     spectrograms = report["spectrograms"]
     analysis = report["transform_analysis"]
+    filters = report.get("filters", {"transparent": True})
+    filter_transparent = bool(filters.get("transparent", True))
     lines = [
         "# CHORUS Split Report",
         "",
@@ -194,6 +206,27 @@ def write_markdown_report(output_dir: str | Path, report: dict[str, object]) -> 
             f"| {_transform_label(name)} | {item['status']} | {item['experimental']} | "
             f"{residual['max_abs']:.6e} | {residual['rms']:.6e} |"
         )
+    lines.extend(
+        [
+            "",
+            "## Contribution Filters",
+            f"- Transparent: `{filter_transparent}`",
+        ]
+    )
+    if not filter_transparent:
+        lines.append("- Filtered output intentionally altered: `True`")
+        for name, chain in filters.get("chains", {}).items():
+            chain_labels = []
+            for item in chain:
+                parameters = item.get("parameters", {})
+                parameter_text = (
+                    ""
+                    if not parameters
+                    else " "
+                    + ", ".join(f"{key}={value}" for key, value in parameters.items())
+                )
+                chain_labels.append(f"{item['type']}{parameter_text}")
+            lines.append(f"- {name}: {' -> '.join(chain_labels)}")
     lines.extend(["", "## Warnings"])
     for warning in report["warnings"]:
         lines.append(f"- {warning}")
