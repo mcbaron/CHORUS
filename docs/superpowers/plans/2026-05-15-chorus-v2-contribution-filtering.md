@@ -717,7 +717,7 @@ git commit -m "feat: report contribution filters"
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Add filter usage docs**
+- [x] **Step 1: Add filter usage docs**
 
 Append to `README.md`:
 
@@ -746,7 +746,7 @@ poetry run chorus split input.wav --out-dir out --filters filters.json
 Valid contribution names are `Lc`, `Rc`, `Lo`, `Ro`, `Ls`, and `Rs`. Invalid contribution names, unsupported filter types, and invalid parameter ranges fail before output audio is written.
 ```
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
 Run:
 
@@ -757,7 +757,7 @@ poetry run ruff check .
 
 Expected: all tests pass and Ruff reports no violations.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md
