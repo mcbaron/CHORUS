@@ -72,7 +72,6 @@ pub fn apply_chains(contributions: &BTreeMap<String, Vec<f64>>, chains: &FilterC
 #[cfg(test)]
 mod tests {
     use super::{apply_chains, unity_chains, FilterSpec};
-    use std::collections::BTreeMap;
 
     #[test]
     fn applies_gain_and_polarity() {
