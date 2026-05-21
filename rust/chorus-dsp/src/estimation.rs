@@ -26,11 +26,13 @@ impl SmoothedScalarEstimator {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ComplexEstimator {
     alpha: f64,
     epsilon: f64,
     cross: Vec<Complex<f64>>,  // per-coefficient smoothed cross-correlation
     auto: Vec<f64>,            // per-coefficient smoothed auto-correlation
+    buf: Vec<Complex<f64>>,    // pre-allocated output buffer
 }
 
 impl ComplexEstimator {
@@ -40,31 +42,34 @@ impl ComplexEstimator {
             epsilon,
             cross: vec![Complex::new(0.0, 0.0); num_coeffs],
             auto: vec![0.0; num_coeffs],
+            buf: vec![Complex::new(0.0, 0.0); num_coeffs],
         }
     }
 
-    pub fn estimate(&mut self, prototype: &[Complex<f64>], source: &[Complex<f64>]) -> Vec<Complex<f64>> {
+    pub fn estimate(&mut self, prototype: &[Complex<f64>], source: &[Complex<f64>]) -> &[Complex<f64>] {
         debug_assert_eq!(prototype.len(), self.cross.len());
         debug_assert_eq!(source.len(), self.cross.len());
         let alpha = self.alpha;
         let epsilon = self.epsilon;
-        self.cross.iter_mut()
+        for (((cross_k, auto_k), buf_k), (proto_k, src_k)) in self.cross.iter_mut()
             .zip(self.auto.iter_mut())
+            .zip(self.buf.iter_mut())
             .zip(prototype.iter().zip(source.iter()))
-            .map(|((cross_k, auto_k), (proto_k, src_k))| {
-                let instant_cross = proto_k * src_k.conj();
-                let instant_auto = src_k.norm_sqr();
-                *cross_k = (1.0 - alpha) * instant_cross + alpha * *cross_k;
-                *auto_k = (1.0 - alpha) * instant_auto + alpha * *auto_k;
-                let weight = cross_k.re / auto_k.max(epsilon);
-                weight * src_k
-            })
-            .collect()
+        {
+            let instant_cross = proto_k * src_k.conj();
+            let instant_auto = src_k.norm_sqr();
+            *cross_k = (1.0 - alpha) * instant_cross + alpha * *cross_k;
+            *auto_k = (1.0 - alpha) * instant_auto + alpha * *auto_k;
+            let weight = cross_k.re / auto_k.max(epsilon);
+            *buf_k = weight * src_k;
+        }
+        &self.buf
     }
 
     pub fn reset(&mut self) {
         for c in &mut self.cross { *c = Complex::new(0.0, 0.0); }
         for a in &mut self.auto { *a = 0.0; }
+        for b in &mut self.buf  { *b = Complex::new(0.0, 0.0); }
     }
 }
 
@@ -91,7 +96,7 @@ mod tests {
             Complex::new(2.0, 0.0),
             Complex::new(3.0, 0.0),
         ];
-        let result = est.estimate(&src, &src);
+        let result = est.estimate(&src, &src).to_vec();
         for (actual, expected) in result.iter().zip(&src) {
             approx::assert_abs_diff_eq!(actual.re, expected.re, epsilon = 1e-9);
             approx::assert_abs_diff_eq!(actual.im, expected.im, epsilon = 1e-9);
@@ -100,22 +105,26 @@ mod tests {
 
     #[test]
     fn complex_estimator_smoothing_state_persists() {
-        // With non-zero alpha, successive calls blend previous state
-        let alpha = 0.5_f64;
+        let alpha = 0.9_f64;
         let mut est = ComplexEstimator::new(alpha, 1e-12, 1);
-        let proto = vec![Complex::new(1.0, 0.0)];
-        let src = vec![Complex::new(2.0, 0.0)];
+        let proto1 = vec![Complex::new(1.0, 0.0)];
+        let src1 = vec![Complex::new(2.0, 0.0)];
+        let proto2 = vec![Complex::new(1.0, 0.0)];
+        let src2 = vec![Complex::new(1.0, 0.0)];
 
-        // First call: cross = (1-0.5)*2 + 0 = 1, auto = (1-0.5)*4 + 0 = 2, weight = 1/2 = 0.5, out = 1.0
-        let first = est.estimate(&proto, &src);
-        // Second call: cross = (1-0.5)*2 + 0.5*1 = 1.5, auto = (1-0.5)*4 + 0.5*2 = 3, weight = 1.5/3 = 0.5, out = 1.0
-        let second = est.estimate(&proto, &src);
+        // First call with proto=1, src=2
+        let _first: Vec<_> = est.estimate(&proto1, &src1).to_vec();
 
-        // The outputs should be non-zero (state was maintained)
-        assert!(first[0].re.abs() > 1e-9);
-        assert!(second[0].re.abs() > 1e-9);
-        // With alpha=0.5 and identical repeated inputs, weight stabilizes — both calls give same weight here
-        approx::assert_abs_diff_eq!(first[0].re, second[0].re, epsilon = 1e-9);
+        // Second call with proto=1, src=1 (different input, state carries over)
+        let second: Vec<_> = est.estimate(&proto2, &src2).to_vec();
+
+        // Fresh estimator (no prior state) on same second input
+        let mut fresh = ComplexEstimator::new(alpha, 1e-12, 1);
+        let fresh_first: Vec<_> = fresh.estimate(&proto2, &src2).to_vec();
+
+        // second != fresh_first (state was carried over from first call, affecting second)
+        assert!((second[0].re - fresh_first[0].re).abs() > 1e-9,
+            "second call with state should differ from fresh estimator with same input: {} != {}", second[0].re, fresh_first[0].re);
     }
 
     #[test]
@@ -134,8 +143,8 @@ mod tests {
 
         // After reset, result should match a fresh estimator
         let mut fresh = ComplexEstimator::new(alpha, 1e-12, 2);
-        let result_reset = est.estimate(&proto, &src);
-        let result_fresh = fresh.estimate(&proto, &src);
+        let result_reset = est.estimate(&proto, &src).to_vec();
+        let result_fresh = fresh.estimate(&proto, &src).to_vec();
 
         for (r, f) in result_reset.iter().zip(&result_fresh) {
             approx::assert_abs_diff_eq!(r.re, f.re, epsilon = 1e-12);
