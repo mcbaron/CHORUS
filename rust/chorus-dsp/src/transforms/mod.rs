@@ -7,8 +7,9 @@ pub trait Transform: Send {
     fn reset(&mut self);
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum WaveletKind {
+    #[default]
     #[serde(rename = "db4")]
     Db4,
 }

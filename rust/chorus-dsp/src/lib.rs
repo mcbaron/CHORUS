@@ -5,3 +5,4 @@ pub mod prototypes;
 pub mod transforms;
 
 pub use processor::{ChorusDsp, ChorusError, ChorusOutput, DspConfig};
+pub use transforms::{Transform, TransformKind, WaveletKind};

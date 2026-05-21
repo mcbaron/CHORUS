@@ -26,6 +26,7 @@ impl Default for DspConfig {
     }
 }
 
+// TODO(Task 6): remove — alpha moves into StreamingStft/Frft/Wavelet
 fn smoothing_alpha_from_transform(transform: &TransformKind) -> f64 {
     match transform {
         TransformKind::Stft { smoothing_alpha, .. } => *smoothing_alpha,
@@ -49,9 +50,13 @@ pub enum ChorusError {
 
 pub struct ChorusDsp {
     config: DspConfig,
+    // TODO(Task 6): remove — estimators move into transform impls
     left_center_est: SmoothedScalarEstimator,
+    // TODO(Task 6): remove — estimators move into transform impls
     right_center_est: SmoothedScalarEstimator,
+    // TODO(Task 6): remove — estimators move into transform impls
     left_surround_est: SmoothedScalarEstimator,
+    // TODO(Task 6): remove — estimators move into transform impls
     right_surround_est: SmoothedScalarEstimator,
 }
 
