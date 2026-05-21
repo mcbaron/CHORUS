@@ -1,0 +1,102 @@
+{
+  "cases": {
+    "center_dominant": {
+      "filters": {},
+      "outputs": {
+        "center": "center_dominant.center.npy",
+        "input": "center_dominant.input.npy",
+        "only": "center_dominant.only.npy",
+        "surround": "center_dominant.surround.npy"
+      }
+    },
+    "hard_panned_left": {
+      "filters": {},
+      "outputs": {
+        "center": "hard_panned_left.center.npy",
+        "input": "hard_panned_left.input.npy",
+        "only": "hard_panned_left.only.npy",
+        "surround": "hard_panned_left.surround.npy"
+      }
+    },
+    "hard_panned_right": {
+      "filters": {},
+      "outputs": {
+        "center": "hard_panned_right.center.npy",
+        "input": "hard_panned_right.input.npy",
+        "only": "hard_panned_right.only.npy",
+        "surround": "hard_panned_right.surround.npy"
+      }
+    },
+    "known_eq_preset": {
+      "filters": {
+        "Lc": [
+          {
+            "db": -6.0,
+            "type": "gain"
+          }
+        ],
+        "Lo": [
+          {
+            "frequency_hz": 120.0,
+            "mode": "highpass",
+            "q": 0.707,
+            "type": "eq"
+          }
+        ],
+        "Rs": [
+          {
+            "type": "polarity"
+          }
+        ]
+      },
+      "outputs": {
+        "center": "known_eq_preset.center.npy",
+        "input": "known_eq_preset.input.npy",
+        "only": "known_eq_preset.only.npy",
+        "surround": "known_eq_preset.surround.npy"
+      }
+    },
+    "near_silence": {
+      "filters": {},
+      "outputs": {
+        "center": "near_silence.center.npy",
+        "input": "near_silence.input.npy",
+        "only": "near_silence.only.npy",
+        "surround": "near_silence.surround.npy"
+      }
+    },
+    "phase_inverted_surround": {
+      "filters": {},
+      "outputs": {
+        "center": "phase_inverted_surround.center.npy",
+        "input": "phase_inverted_surround.input.npy",
+        "only": "phase_inverted_surround.only.npy",
+        "surround": "phase_inverted_surround.surround.npy"
+      }
+    },
+    "silence": {
+      "filters": {},
+      "outputs": {
+        "center": "silence.center.npy",
+        "input": "silence.input.npy",
+        "only": "silence.only.npy",
+        "surround": "silence.surround.npy"
+      }
+    },
+    "unity_bypass": {
+      "filters": {},
+      "outputs": {
+        "center": "unity_bypass.center.npy",
+        "input": "unity_bypass.input.npy",
+        "only": "unity_bypass.only.npy",
+        "surround": "unity_bypass.surround.npy"
+      }
+    }
+  },
+  "sample_rate": 48000,
+  "samples": 4096,
+  "tolerances": {
+    "bypass_max_abs": 1e-06,
+    "filtered_max_abs": 5e-05
+  }
+}
