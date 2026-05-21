@@ -117,10 +117,10 @@ pub struct DspConfig {
 
 Implements the Ozaktas-Kutay algorithm. The transform of order `α` (where the rotation angle is `α * π/2`) decomposes into:
 
-1. Chirp pre-multiply: `x[n] * exp(-iπ * cot(φ) * (n/N)²)` where `φ = α * π/2`
+1. Chirp pre-multiply: `x[n] * exp(-iπ * cot(φ) * n² / N)` where `φ = α * π/2`, `n` is the sample index, `N` is `frame_size`
 2. FFT
-3. Chirp post-multiply in frequency domain: `X[k] * exp(-iπ * cot(φ) * (k/N)²)`
-4. Normalization: `sqrt((1 - i*cot(φ)) / N)`
+3. Chirp post-multiply in frequency domain: `X[k] * exp(-iπ * cot(φ) * k² / N)`
+4. Normalization: `sqrt((1 - i*cot(φ)) / (N * |csc(φ)|))`
 5. IFFT to get transform-domain coefficients for prototype/estimation
 
 Chirp tables are precomputed at construction from `order` and `frame_size`.
@@ -260,3 +260,8 @@ Same tolerance as the existing `stereo_identical` sine wave tests. These establi
 1. **Python FrFT:** Replace `FrFTTransform` phase-shifted FFT with true Ozaktas-Kutay algorithm so Python and Rust FrFT produce fixture-comparable output.
 2. **EQ biquad:** Implement `FilterSpec::Eq` in both Rust and Python paths using per-bin biquad coefficients, enabling `known_eq_preset` fixture parity.
 3. **Real-time buffer sizing:** Profile streaming latency under JUCE callbacks and tune default `frame_size`/`hop_size` for specific DJ host requirements.
+
+
+rsync -a --remove-source-files /storage/primary/PhotoLibrary/PhotoLibrary /storage/primary/PhotoLibrary
+find /storage/primary/PhotoLibrary/PhotoLibrary -depth -type d -empty -delete
+rmdir /storage/primary/PhotoLibrary/PhotoLibrary

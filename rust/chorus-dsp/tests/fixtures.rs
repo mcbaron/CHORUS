@@ -23,6 +23,14 @@ fn assert_close(actual: &[[f64; 2]], expected: &[[f64; 2]], tolerance: f64) {
 }
 
 #[test]
+#[ignore = "FrFT fixture parity blocked: Python uses phase-shifted FFT, not true FrFT; see TODO in frft.rs"]
+fn rust_matches_python_frft_fixture() {
+    // Enable once Python FrFTTransform is updated to Ozaktas-Kutay algorithm.
+    // Until then, Rust and Python FrFT outputs are not comparable.
+    todo!()
+}
+
+#[test]
 fn rust_matches_python_unity_bypass_fixture() {
     let input = load_stereo("unity_bypass.input.npy");
     let expected_center = load_stereo("unity_bypass.center.npy");

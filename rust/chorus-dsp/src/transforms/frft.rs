@@ -325,6 +325,8 @@ mod tests {
     use rustfft::FftPlanner;
 
     const FRAME_SIZE: usize = 256;
+    const WAV_FRAME_SIZE: usize = 1024;
+    const WAV_HOP_SIZE: usize = 1024;
 
     fn make_frft(order: f64) -> StreamingFrft {
         StreamingFrft::new(order, FRAME_SIZE, 0.0, 1e-12, unity_chains())
@@ -420,6 +422,95 @@ mod tests {
             assert!((out[0] - inp[0]).abs() < 1e-10, "left mismatch at {i}");
             assert!((out[1] - inp[1]).abs() < 1e-10, "right mismatch at {i}");
         }
+    }
+
+    fn run_wav_round_trip(path: &str) {
+        let mut reader = hound::WavReader::open(path)
+            .unwrap_or_else(|e| panic!("could not open {path}: {e}"));
+        let spec = reader.spec();
+        let num_channels = spec.channels as usize;
+        assert!(num_channels <= 2, "expected mono or stereo WAV");
+
+        let scale = match spec.sample_format {
+            hound::SampleFormat::Float => 1.0_f64,
+            hound::SampleFormat::Int => {
+                1.0 / (1_i64
+                    .checked_shl(spec.bits_per_sample as u32 - 1)
+                    .unwrap_or(1) as f64)
+            }
+        };
+
+        let raw_samples: Vec<f64> = match spec.sample_format {
+            hound::SampleFormat::Float => reader
+                .samples::<f32>()
+                .map(|s| s.expect("read error") as f64)
+                .collect(),
+            hound::SampleFormat::Int => reader
+                .samples::<i32>()
+                .map(|s| s.expect("read error") as f64 * scale)
+                .collect(),
+        };
+
+        let signal: Vec<[f64; 2]> = if num_channels == 2 {
+            raw_samples.chunks(2).map(|c| [c[0], c[1]]).collect()
+        } else {
+            raw_samples.iter().map(|&s| [s, s]).collect()
+        };
+
+        let num_samples = signal.len();
+        let mut frft = StreamingFrft::new(0.5, WAV_FRAME_SIZE, 0.0, 1e-12, unity_chains());
+        let mut all_output: Vec<[f64; 2]> = Vec::new();
+
+        for chunk in signal.chunks(WAV_HOP_SIZE) {
+            let out = frft.process_block(chunk);
+            all_output.extend_from_slice(&out);
+        }
+        // Flush with silence to drain any remaining output
+        let silence = vec![[0.0_f64; 2]; WAV_FRAME_SIZE * 2];
+        let out = frft.process_block(&silence);
+        all_output.extend_from_slice(&out);
+
+        // FrFT with hop == frame emits one frame after frame_size samples.
+        // Compare the middle portion, skipping the first and last frame to
+        // avoid boundary effects at both ends.
+        let skip = WAV_FRAME_SIZE;
+        let compare_len = num_samples.saturating_sub(2 * WAV_FRAME_SIZE);
+
+        assert!(
+            all_output.len() >= skip + compare_len,
+            "not enough output samples: got {}, need {}",
+            all_output.len(),
+            skip + compare_len
+        );
+
+        for i in 0..compare_len {
+            let out_sample = all_output[skip + i];
+            let in_sample = signal[skip + i];
+            assert!(
+                (out_sample[0] - in_sample[0]).abs() < 1e-3,
+                "left channel WAV mismatch at sample {}: out={}, expected={}",
+                skip + i,
+                out_sample[0],
+                in_sample[0]
+            );
+            assert!(
+                (out_sample[1] - in_sample[1]).abs() < 1e-3,
+                "right channel WAV mismatch at sample {}: out={}, expected={}",
+                skip + i,
+                out_sample[1],
+                in_sample[1]
+            );
+        }
+    }
+
+    #[test]
+    fn wav_round_trip_pinkpanther() {
+        run_wav_round_trip("../../tests/test_tracks_wav/PinkPanther.wav");
+    }
+
+    #[test]
+    fn wav_round_trip_tvsong() {
+        run_wav_round_trip("../../tests/test_tracks_wav/TVSong.wav");
     }
 
     /// Test 5: Streaming consistency — chunk size does not affect output.
