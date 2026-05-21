@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+pub mod frft;
+pub use frft::StreamingFrft;
+
 pub mod stft;
 pub use stft::StreamingStft;
 
