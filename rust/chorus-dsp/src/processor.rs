@@ -1,6 +1,6 @@
 use crate::estimation::SmoothedScalarEstimator;
 use crate::filters::{apply_chains, unity_chains, FilterChains};
-use crate::prototypes::{center_prototype, surround_prototype};
+use crate::prototypes::{center_prototype_real, surround_prototype_real};
 use crate::transforms::TransformKind;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -79,8 +79,8 @@ impl ChorusDsp {
         }
         let left: Vec<f64> = input.iter().map(|frame| frame[0]).collect();
         let right: Vec<f64> = input.iter().map(|frame| frame[1]).collect();
-        let center_proto = center_prototype(&left, &right);
-        let surround_proto = surround_prototype(&left, &right);
+        let center_proto = center_prototype_real(&left, &right);
+        let surround_proto = surround_prototype_real(&left, &right);
         let lc = self.left_center_est.estimate(&center_proto, &left);
         let rc = self.right_center_est.estimate(&center_proto, &right);
         let ls = self.left_surround_est.estimate(&surround_proto, &left);
