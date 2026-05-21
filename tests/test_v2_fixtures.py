@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import numpy as np
 
 from scripts.generate_v2_fixtures import build_fixture_set
@@ -13,7 +11,12 @@ def test_build_fixture_set_is_deterministic() -> None:
 
     assert first["manifest"] == second["manifest"]
     for name in first["arrays"]:
-        np.testing.assert_allclose(first["arrays"][name], second["arrays"][name], atol=0.0, rtol=0.0)
+        np.testing.assert_allclose(
+            first["arrays"][name],
+            second["arrays"][name],
+            atol=0.0,
+            rtol=0.0,
+        )
 
 
 def test_fixture_manifest_contains_required_cases() -> None:
