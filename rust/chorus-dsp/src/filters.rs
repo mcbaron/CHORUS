@@ -69,6 +69,38 @@ pub fn apply_chains(contributions: &BTreeMap<String, Vec<f64>>, chains: &FilterC
     output
 }
 
+/// Returns the effective scalar multiplier for a single contribution after applying its filter chain.
+/// `soloed` should be the pre-computed list of soloed contribution names (empty = none soloed).
+pub fn chain_scalar(chains: &FilterChains, name: &str, soloed: &[String]) -> f64 {
+    // If any solo exists and this contribution is not soloed, mute it
+    if !soloed.is_empty() && !soloed.iter().any(|s| s == name) {
+        return 0.0;
+    }
+
+    let default_chain = vec![FilterSpec::Unity];
+    let chain = chains.get(name).unwrap_or(&default_chain);
+
+    let mut scalar = 1.0_f64;
+    for spec in chain {
+        match spec {
+            FilterSpec::Unity | FilterSpec::Solo => {}
+            FilterSpec::Gain { db } => {
+                scalar *= 10.0_f64.powf(db / 20.0);
+            }
+            FilterSpec::Mute => {
+                scalar = 0.0;
+            }
+            FilterSpec::Polarity => {
+                scalar = -scalar;
+            }
+            FilterSpec::Eq { .. } => {
+                unimplemented!("EQ not yet supported in chain_scalar");
+            }
+        }
+    }
+    scalar
+}
+
 #[cfg(test)]
 mod tests {
     use super::{apply_chains, unity_chains, FilterSpec};

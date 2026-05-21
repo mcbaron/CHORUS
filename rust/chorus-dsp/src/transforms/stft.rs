@@ -91,37 +91,6 @@ impl StreamingStft {
         buf.iter().map(|c| c.re / n as f64).collect()
     }
 
-    /// Compute the effective scalar multiplier for a contribution from its filter chain.
-    fn chain_scalar(chains: &FilterChains, name: &str, soloed: &[String]) -> f64 {
-        // If any solo exists and this contribution is not soloed, mute it
-        if !soloed.is_empty() && !soloed.iter().any(|s| s == name) {
-            return 0.0;
-        }
-
-        let default_chain = vec![FilterSpec::Unity];
-        let chain = chains.get(name).unwrap_or(&default_chain);
-
-        let mut scalar = 1.0_f64;
-        for spec in chain {
-            match spec {
-                FilterSpec::Unity | FilterSpec::Solo => {}
-                FilterSpec::Gain { db } => {
-                    scalar *= 10.0_f64.powf(db / 20.0);
-                }
-                FilterSpec::Mute => {
-                    scalar = 0.0;
-                }
-                FilterSpec::Polarity => {
-                    scalar = -scalar;
-                }
-                FilterSpec::Eq { .. } => {
-                    unimplemented!("EQ not yet supported");
-                }
-            }
-        }
-        scalar
-    }
-
     fn process_hop(&mut self) {
         let frame_size = self.frame_size;
         let hop_size = self.hop_size;
@@ -164,12 +133,12 @@ impl StreamingStft {
             .collect();
 
         // Apply filter chain scalars
-        let sc_lc = Self::chain_scalar(&self.filter_chains, "Lc", &soloed);
-        let sc_rc = Self::chain_scalar(&self.filter_chains, "Rc", &soloed);
-        let sc_lo = Self::chain_scalar(&self.filter_chains, "Lo", &soloed);
-        let sc_ro = Self::chain_scalar(&self.filter_chains, "Ro", &soloed);
-        let sc_ls = Self::chain_scalar(&self.filter_chains, "Ls", &soloed);
-        let sc_rs = Self::chain_scalar(&self.filter_chains, "Rs", &soloed);
+        let sc_lc = crate::filters::chain_scalar(&self.filter_chains, "Lc", &soloed);
+        let sc_rc = crate::filters::chain_scalar(&self.filter_chains, "Rc", &soloed);
+        let sc_lo = crate::filters::chain_scalar(&self.filter_chains, "Lo", &soloed);
+        let sc_ro = crate::filters::chain_scalar(&self.filter_chains, "Ro", &soloed);
+        let sc_ls = crate::filters::chain_scalar(&self.filter_chains, "Ls", &soloed);
+        let sc_rs = crate::filters::chain_scalar(&self.filter_chains, "Rs", &soloed);
 
         let apply_scalar = |bins: &[Complex<f64>], s: f64| -> Vec<Complex<f64>> {
             bins.iter().map(|c| c * s).collect()
@@ -338,11 +307,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn wav_round_trip() {
-        let mut reader = hound::WavReader::open(
-            "../../tests/test_tracks_wav/PinkPanther.wav"
-        ).expect("could not open PinkPanther.wav");
+    fn run_wav_round_trip(path: &str) {
+        let mut reader = hound::WavReader::open(path)
+            .unwrap_or_else(|e| panic!("could not open {path}: {e}"));
         let spec = reader.spec();
         let num_channels = spec.channels as usize;
         assert!(num_channels <= 2, "expected mono or stereo WAV");
@@ -413,6 +380,16 @@ mod tests {
                 skip + i, out_sample[1], in_sample[1]
             );
         }
+    }
+
+    #[test]
+    fn wav_round_trip() {
+        run_wav_round_trip("../../tests/test_tracks_wav/PinkPanther.wav");
+    }
+
+    #[test]
+    fn wav_round_trip_tvsong() {
+        run_wav_round_trip("../../tests/test_tracks_wav/TVSong.wav");
     }
 
     #[test]
