@@ -3,7 +3,7 @@ use num_complex::Complex;
 
 use crate::estimation::ComplexEstimator;
 use crate::filters::{FilterChains, FilterSpec};
-use crate::prototypes::{center_prototype_real, surround_prototype_real};
+use crate::prototypes::{center_prototype, surround_prototype};
 use crate::transforms::Transform;
 
 // Daubechies-4 (db4) decomposition filters (8 taps)
@@ -263,15 +263,13 @@ impl StreamingWavelet {
         let left_flat: Vec<f64> = left_coeffs.iter().flat_map(|v| v.iter().copied()).collect();
         let right_flat: Vec<f64> = right_coeffs.iter().flat_map(|v| v.iter().copied()).collect();
 
-        // Compute real-valued prototypes
-        let center_proto_real = center_prototype_real(&left_flat, &right_flat);
-        let surround_proto_real = surround_prototype_real(&left_flat, &right_flat);
-
-        // Wrap as complex for ComplexEstimator
+        // Wrap real coefficients as complex (zero imaginary part)
         let left_complex: Vec<Complex<f64>> = left_flat.iter().map(|&x| Complex::new(x, 0.0)).collect();
         let right_complex: Vec<Complex<f64>> = right_flat.iter().map(|&x| Complex::new(x, 0.0)).collect();
-        let center_proto: Vec<Complex<f64>> = center_proto_real.iter().map(|&x| Complex::new(x, 0.0)).collect();
-        let surround_proto: Vec<Complex<f64>> = surround_proto_real.iter().map(|&x| Complex::new(x, 0.0)).collect();
+
+        // Compute matched-magnitude complex prototypes
+        let center_proto = center_prototype(&left_complex, &right_complex);
+        let surround_proto = surround_prototype(&left_complex, &right_complex);
 
         // Run estimators
         let lc_complex = self.lc_est.estimate(&center_proto, &left_complex).to_vec();
@@ -460,12 +458,12 @@ mod tests {
             let out_sample = all_output[bc + i];
             let in_sample = signal[i];
             assert!(
-                (out_sample[0] - in_sample[0]).abs() < 1e-3,
+                (out_sample[0] - in_sample[0]).abs() < 1e-6,
                 "left channel mismatch at sample {}: out={} vs in={}",
                 i, out_sample[0], in_sample[0]
             );
             assert!(
-                (out_sample[1] - in_sample[1]).abs() < 1e-3,
+                (out_sample[1] - in_sample[1]).abs() < 1e-6,
                 "right channel mismatch at sample {}: out={} vs in={}",
                 i, out_sample[1], in_sample[1]
             );
@@ -532,12 +530,12 @@ mod tests {
             let out_sample = all_output[bc + i];
             let in_sample = signal[i];
             assert!(
-                (out_sample[0] - in_sample[0]).abs() < 1e-3,
+                (out_sample[0] - in_sample[0]).abs() < 1e-6,
                 "left channel WAV mismatch at sample {}: out={}, expected={}",
                 i, out_sample[0], in_sample[0]
             );
             assert!(
-                (out_sample[1] - in_sample[1]).abs() < 1e-3,
+                (out_sample[1] - in_sample[1]).abs() < 1e-6,
                 "right channel WAV mismatch at sample {}: out={}, expected={}",
                 i, out_sample[1], in_sample[1]
             );
@@ -576,6 +574,39 @@ mod tests {
             total_out,
             FRAME_SIZE
         );
+    }
+
+    /// Test 3b: Boundary contamination is discarded and does not appear in output
+    #[test]
+    fn boundary_contamination_discarded() {
+        // Create a signal that is zero everywhere except in the trailing boundary region
+        // of the first block. The wavelet overlap-save algorithm discards the last `bc`
+        // samples of each processed block, so those non-zero samples should NOT appear
+        // in the output.
+        const FRAME: usize = 512;
+        const LEVEL: usize = 3;
+        let bc = (8 - 1) * ((1 << LEVEL) - 1); // = 49
+        let _overlap = 2 * bc;
+
+        let mut wav = StreamingWavelet::new(LEVEL, FRAME, 0.0, 1e-9, unity_chains());
+
+        // The input_buf is pre-loaded with `overlap` zeros. After feeding FRAME samples the
+        // buf has `overlap + FRAME = block_size` samples, which triggers the first emission.
+        // We put non-zero values in the last `bc` positions of the FRAME we feed — these map
+        // to the trailing boundary zone of the first processed block and should be discarded.
+        let mut input = vec![[0.0_f64; 2]; FRAME];
+        for i in (FRAME - bc)..FRAME {
+            input[i] = [1.0, 1.0];
+        }
+        let output = wav.process_block(&input);
+        // The first FRAME of input triggers exactly one emission of FRAME output samples.
+        assert_eq!(output.len(), FRAME, "expected one frame of output after feeding first frame");
+        // The non-zero signal was in the trailing boundary zone that gets discarded —
+        // output should be near-zero (small residual may exist due to wavelet spreading).
+        for (idx, frame) in output.iter().enumerate() {
+            assert!(frame[0].abs() < 0.1, "boundary contamination leaked into output at {}: {}", idx, frame[0]);
+            assert!(frame[1].abs() < 0.1, "boundary contamination leaked into output at {}: {}", idx, frame[1]);
+        }
     }
 
     /// Test 4: Streaming consistency — 256-sample vs 512-sample chunks give same output
