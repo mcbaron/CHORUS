@@ -1,6 +1,7 @@
 use crate::estimation::SmoothedScalarEstimator;
 use crate::filters::{apply_chains, unity_chains, FilterChains};
 use crate::prototypes::{center_prototype, surround_prototype};
+use crate::transforms::TransformKind;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -8,19 +9,28 @@ use thiserror::Error;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DspConfig {
     pub sample_rate: u32,
-    pub smoothing_alpha: f64,
     pub epsilon: f64,
     pub filter_chains: FilterChains,
+    #[serde(default)]
+    pub transform: TransformKind,
 }
 
 impl Default for DspConfig {
     fn default() -> Self {
         Self {
             sample_rate: 48_000,
-            smoothing_alpha: 0.0,
             epsilon: 1e-9,
             filter_chains: unity_chains(),
+            transform: TransformKind::default(),
         }
+    }
+}
+
+fn smoothing_alpha_from_transform(transform: &TransformKind) -> f64 {
+    match transform {
+        TransformKind::Stft { smoothing_alpha, .. } => *smoothing_alpha,
+        TransformKind::Frft { smoothing_alpha, .. } => *smoothing_alpha,
+        TransformKind::Wavelet { smoothing_alpha, .. } => *smoothing_alpha,
     }
 }
 
@@ -47,7 +57,7 @@ pub struct ChorusDsp {
 
 impl ChorusDsp {
     pub fn new(config: DspConfig) -> Self {
-        let alpha = config.smoothing_alpha;
+        let alpha = smoothing_alpha_from_transform(&config.transform);
         let epsilon = config.epsilon;
         Self {
             left_center_est: SmoothedScalarEstimator::new(alpha, epsilon),
