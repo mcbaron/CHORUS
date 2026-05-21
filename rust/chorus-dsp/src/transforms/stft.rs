@@ -182,29 +182,28 @@ impl StreamingStft {
         let ls_scaled = apply_scalar(&ls_bins, sc_ls);
         let rs_scaled = apply_scalar(&rs_bins, sc_rs);
 
-        // Sum contributions per output channel
-        let out_left_bins: Vec<Complex<f64>> = (0..num_bins)
-            .map(|k| lc_scaled[k] + lo_scaled[k] + ls_scaled[k])
-            .collect();
-        let out_right_bins: Vec<Complex<f64>> = (0..num_bins)
-            .map(|k| rc_scaled[k] + ro_scaled[k] + rs_scaled[k])
-            .collect();
+        // IFFT each contribution separately, apply synthesis window, overlap-add into output frame.
+        // Lc, Lo, Ls → left channel (index 0); Rc, Ro, Rs → right channel (index 1).
+        let contributions: &[(&[Complex<f64>], usize)] = &[
+            (&lc_scaled, 0),
+            (&lo_scaled, 0),
+            (&ls_scaled, 0),
+            (&rc_scaled, 1),
+            (&ro_scaled, 1),
+            (&rs_scaled, 1),
+        ];
 
-        // IFFT
-        let left_time = self.irfft(&out_left_bins);
-        let right_time = self.irfft(&out_right_bins);
-
-        // Apply synthesis window and overlap-add
         let overlap_len = frame_size - hop_size;
 
-        // Build full output frame (frame_size samples) by overlapping
-        let mut out_frame: Vec<[f64; 2]> = (0..frame_size)
-            .map(|i| {
-                let l = left_time[i] * self.window[i];
-                let r = right_time[i] * self.window[i];
-                [l, r]
-            })
-            .collect();
+        // Accumulate windowed time-domain signals per channel
+        let mut out_frame: Vec<[f64; 2]> = vec![[0.0, 0.0]; frame_size];
+
+        for (bins, ch) in contributions.iter() {
+            let time_signal = self.irfft(bins);
+            for i in 0..frame_size {
+                out_frame[i][*ch] += time_signal[i] * self.window[i];
+            }
+        }
 
         // Add overlap tail to the beginning
         for i in 0..overlap_len {
