@@ -6,6 +6,9 @@ pub use frft::StreamingFrft;
 pub mod stft;
 pub use stft::StreamingStft;
 
+pub mod wavelet;
+pub use wavelet::StreamingWavelet;
+
 pub trait Transform: Send {
     /// Push one stereo block. Returns processed stereo output samples
     /// when enough output is available; may return empty vec during warm-up.

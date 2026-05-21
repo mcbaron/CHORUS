@@ -261,7 +261,3 @@ Same tolerance as the existing `stereo_identical` sine wave tests. These establi
 2. **EQ biquad:** Implement `FilterSpec::Eq` in both Rust and Python paths using per-bin biquad coefficients, enabling `known_eq_preset` fixture parity.
 3. **Real-time buffer sizing:** Profile streaming latency under JUCE callbacks and tune default `frame_size`/`hop_size` for specific DJ host requirements.
 
-
-rsync -a --remove-source-files /storage/primary/PhotoLibrary/PhotoLibrary /storage/primary/PhotoLibrary
-find /storage/primary/PhotoLibrary/PhotoLibrary -depth -type d -empty -delete
-rmdir /storage/primary/PhotoLibrary/PhotoLibrary
