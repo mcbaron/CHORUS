@@ -32,9 +32,8 @@ mod tests {
     fn estimates_scaled_source() {
         let mut estimator = SmoothedScalarEstimator::new(0.0, 1e-12);
         let estimated = estimator.estimate(&[1.0, 2.0, 3.0], &[2.0, 4.0, 6.0]);
-        let expected = vec![2.0, 4.0, 6.0];
-        for (e, a) in estimated.iter().zip(expected.iter()) {
-            assert!((e - a).abs() < 1e-9, "expected {}, got {}", a, e);
+        for (actual, expected) in estimated.iter().zip(&[2.0_f64, 4.0, 6.0]) {
+            approx::assert_abs_diff_eq!(actual, expected, epsilon = 1e-9);
         }
     }
 }
