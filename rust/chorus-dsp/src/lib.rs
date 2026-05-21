@@ -1,5 +1,5 @@
 pub mod estimation;
+pub mod filters;
 pub mod prototypes;
 
-// Add filters and processor exports in the tasks that create those modules.
-// Keeping this shell minimal lets early crate checks compile task-by-task.
+// Add processor exports in the task that creates that module.
