@@ -39,11 +39,23 @@ pub enum ChorusError {
 
 pub struct ChorusDsp {
     config: DspConfig,
+    left_center_est: SmoothedScalarEstimator,
+    right_center_est: SmoothedScalarEstimator,
+    left_surround_est: SmoothedScalarEstimator,
+    right_surround_est: SmoothedScalarEstimator,
 }
 
 impl ChorusDsp {
     pub fn new(config: DspConfig) -> Self {
-        Self { config }
+        let alpha = config.smoothing_alpha;
+        let epsilon = config.epsilon;
+        Self {
+            left_center_est: SmoothedScalarEstimator::new(alpha, epsilon),
+            right_center_est: SmoothedScalarEstimator::new(alpha, epsilon),
+            left_surround_est: SmoothedScalarEstimator::new(alpha, epsilon),
+            right_surround_est: SmoothedScalarEstimator::new(alpha, epsilon),
+            config,
+        }
     }
 
     pub fn process(&mut self, input: &[[f64; 2]]) -> Result<ChorusOutput, ChorusError> {
@@ -54,18 +66,10 @@ impl ChorusDsp {
         let right: Vec<f64> = input.iter().map(|frame| frame[1]).collect();
         let center_proto = center_prototype(&left, &right);
         let surround_proto = surround_prototype(&left, &right);
-        let mut left_center_estimator =
-            SmoothedScalarEstimator::new(self.config.smoothing_alpha, self.config.epsilon);
-        let mut right_center_estimator =
-            SmoothedScalarEstimator::new(self.config.smoothing_alpha, self.config.epsilon);
-        let mut left_surround_estimator =
-            SmoothedScalarEstimator::new(self.config.smoothing_alpha, self.config.epsilon);
-        let mut right_surround_estimator =
-            SmoothedScalarEstimator::new(self.config.smoothing_alpha, self.config.epsilon);
-        let lc = left_center_estimator.estimate(&center_proto, &left);
-        let rc = right_center_estimator.estimate(&center_proto, &right);
-        let ls = left_surround_estimator.estimate(&surround_proto, &left);
-        let mut rs = right_surround_estimator.estimate(&surround_proto, &right);
+        let lc = self.left_center_est.estimate(&center_proto, &left);
+        let rc = self.right_center_est.estimate(&center_proto, &right);
+        let ls = self.left_surround_est.estimate(&surround_proto, &left);
+        let mut rs = self.right_surround_est.estimate(&surround_proto, &right);
         for sample in &mut rs {
             *sample = -*sample;
         }
@@ -104,6 +108,23 @@ mod tests {
         for index in 0..input.len() {
             assert!((output.center[index][0] + output.only[index][0] + output.surround[index][0] - input[index][0]).abs() < 1e-9);
             assert!((output.center[index][1] + output.only[index][1] + output.surround[index][1] - input[index][1]).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn pure_side_signal_has_no_center() {
+        let input = vec![[0.5_f64, -0.5], [0.25, -0.25], [-0.5, 0.5]];
+        let mut dsp = ChorusDsp::new(DspConfig::default());
+        let output = dsp.process(&input).unwrap();
+        for frame in &output.center {
+            assert!(frame[0].abs() < 1e-9, "center left should be zero for pure side signal");
+            assert!(frame[1].abs() < 1e-9, "center right should be zero for pure side signal");
+        }
+        for index in 0..input.len() {
+            let sum_l = output.center[index][0] + output.only[index][0] + output.surround[index][0];
+            let sum_r = output.center[index][1] + output.only[index][1] + output.surround[index][1];
+            assert!((sum_l - input[index][0]).abs() < 1e-9);
+            assert!((sum_r - input[index][1]).abs() < 1e-9);
         }
     }
 }
