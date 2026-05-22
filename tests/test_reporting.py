@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.filters import normalize_filter_config
 from chorus.reporting import (

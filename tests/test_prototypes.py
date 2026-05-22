@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from chorus.prototypes import center_prototype, surround_prototype
 
 

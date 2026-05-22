@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.filters import normalize_filter_config
 

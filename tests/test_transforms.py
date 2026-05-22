@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import soundfile as sf
+
 from chorus.transforms import FrFTTransform, STFTConfig, STFTTransform, WaveletTransform
 
 WAV_FILES = [

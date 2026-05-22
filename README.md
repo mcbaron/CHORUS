@@ -104,4 +104,4 @@ cmake --build plugin/build
 ctest --test-dir plugin/build --output-on-failure
 ```
 
-v3 is not valid until Rust fixture tests match Python v2 outputs and the JUCE wrapper loads in at least one plugin host or validator.
+v3 is not valid until Rust fixture tests match Python v2 outputs and the JUCE wrapper loads in at least one plugin host or validator. Note: two fixture cases (`rust_matches_python_frft_fixture` and `rust_matches_python_known_eq_preset_fixture`) are currently `#[ignore]`d pending FrFT parity alignment and Rust EQ biquad implementation.

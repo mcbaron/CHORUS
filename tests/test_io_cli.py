@@ -4,10 +4,11 @@ import json
 
 import numpy as np
 import pytest
+from scipy.io import wavfile
+
 from chorus.cli import main
 from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.io import build_report, read_stereo_wav, write_stems
-from scipy.io import wavfile
 
 
 def test_wav_read_write_and_report(
