@@ -17,6 +17,7 @@ class ChorusConfig:
     frame_size: int = 1024
     hop_size: int = 512
     smoothing_alpha: float = 0.9
+    frft_order: float = 0.5
     epsilon: float = 1e-9
     filter_chains: FilterChains | None = None
 
@@ -36,7 +37,7 @@ class ChorusProcessor:
         if config.transform == "stft":
             self.transform = STFTTransform(STFTConfig(config.frame_size, config.hop_size))
         elif config.transform == "frft":
-            self.transform = FrFTTransform()
+            self.transform = FrFTTransform(order=config.frft_order, frame_size=config.frame_size)
         elif config.transform == "wavelet":
             self.transform = WaveletTransform()
         else:

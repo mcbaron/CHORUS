@@ -156,3 +156,19 @@ def test_wavelet_round_trip_wav(wav_path: str) -> None:
     reconstructed = transform.inverse(representation)
 
     np.testing.assert_allclose(reconstructed, audio, atol=1e-10, rtol=1e-10)
+
+
+def test_frft_transform_respects_order_from_config() -> None:
+    """FrFTTransform constructed via ChorusConfig must use frft_order."""
+    from chorus.core import ChorusConfig, ChorusProcessor
+
+    rng = np.random.default_rng(99)
+    audio = rng.standard_normal((4096, 2))
+
+    # Processor with frft_order=0.3 must not crash and must reconstruct audio
+    config = ChorusConfig(sample_rate=48_000, transform="frft", frft_order=0.3, frame_size=1024)
+    processor = ChorusProcessor(config)
+    result = processor.process(audio)
+    # center + only + surround should approximately reconstruct input
+    reconstructed = result.center + result.only + result.surround
+    np.testing.assert_allclose(reconstructed, audio, atol=1e-6)
