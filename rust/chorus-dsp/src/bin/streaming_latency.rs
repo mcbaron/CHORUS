@@ -18,6 +18,12 @@ fn load_wav_stereo(path: &Path, max_samples: usize) -> Vec<[f64; 2]> {
         path.display()
     );
 
+    assert!(
+        spec.bits_per_sample > 0,
+        "load_wav_stereo: bits_per_sample is 0 in {}",
+        path.display()
+    );
+
     let scale = match spec.sample_format {
         hound::SampleFormat::Float => 1.0_f64,
         hound::SampleFormat::Int => {
@@ -39,7 +45,7 @@ fn load_wav_stereo(path: &Path, max_samples: usize) -> Vec<[f64; 2]> {
     };
 
     let stereo: Vec<[f64; 2]> = if num_channels == 2 {
-        raw.chunks(2).map(|c| [c[0], c[1]]).collect()
+        raw.chunks_exact(2).map(|c| [c[0], c[1]]).collect()
     } else {
         raw.iter().map(|&s| [s, s]).collect()
     };
