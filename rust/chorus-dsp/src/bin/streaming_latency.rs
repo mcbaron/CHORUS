@@ -104,6 +104,76 @@ fn sanity_check(frame_size: usize, hop_size: usize) {
     );
 }
 
+#[derive(Debug)]
+struct BenchResult {
+    callback_size: usize,
+    frame_size: usize,
+    hop_size: usize,
+    source_name: String,
+    mean_us: f64,
+    p95_us: f64,
+    max_us: f64,
+    callback_budget_us: f64,
+    samples_until_first_output: usize,
+    real_time_safe: bool,
+}
+
+/// Feed `audio` through `ChorusDsp` in `callback_size`-sample chunks.
+/// Returns timing statistics and the sample index of first non-empty output.
+fn measure_combo(
+    audio: &[[f64; 2]],
+    callback_size: usize,
+    frame_size: usize,
+    hop_size: usize,
+    source_name: &str,
+) -> BenchResult {
+    let config = make_config(frame_size, hop_size);
+    let mut dsp = ChorusDsp::new(config);
+
+    let mut call_times_us: Vec<f64> = Vec::new();
+    let mut samples_until_first_output: Option<usize> = None;
+    let mut total_input = 0usize;
+
+    for chunk in audio.chunks(callback_size) {
+        let t0 = std::time::Instant::now();
+        let output = dsp.process(chunk).expect("process() failed during benchmark");
+        let elapsed_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
+
+        call_times_us.push(elapsed_us);
+        total_input += chunk.len();
+
+        if samples_until_first_output.is_none() && !output.is_empty() {
+            samples_until_first_output = Some(total_input);
+        }
+    }
+
+    // Sort for percentile calculation (operates on a copy)
+    let mut sorted = call_times_us.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let n = sorted.len();
+    let mean_us = call_times_us.iter().sum::<f64>() / n as f64;
+    let p95_us = sorted[(n as f64 * 0.95) as usize];
+    let max_us = sorted[n - 1];
+
+    // Budget: samples_in_callback / sample_rate, in microseconds
+    let callback_budget_us = callback_size as f64 / 48_000.0 * 1_000_000.0;
+    let real_time_safe = p95_us <= callback_budget_us;
+
+    BenchResult {
+        callback_size,
+        frame_size,
+        hop_size,
+        source_name: source_name.to_string(),
+        mean_us,
+        p95_us,
+        max_us,
+        callback_budget_us,
+        samples_until_first_output: samples_until_first_output.unwrap_or(usize::MAX),
+        real_time_safe,
+    }
+}
+
 fn main() {
     println!("=== Sanity Checks ===");
     for &(fs, hs) in &[(256usize, 128usize), (512, 256), (1024, 512)] {
