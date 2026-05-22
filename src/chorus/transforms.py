@@ -5,7 +5,6 @@ from typing import Protocol
 
 import numpy as np
 import pywt
-from scipy.fft import fft, ifft
 from scipy.signal import ShortTimeFFT
 
 
@@ -107,33 +106,102 @@ class STFTTransform:
         return self.inverse(representation)
 
 
+def _frft_1d(x: np.ndarray, order: float) -> np.ndarray:
+    n = len(x)
+    if order == 0.0:
+        return np.asarray(x, dtype=complex)
+    if order == 1.0:
+        return np.fft.fft(x)
+    phi = order * np.pi / 2.0
+    indices = np.arange(n, dtype=np.float64)
+    cot_phi = np.cos(phi) / np.sin(phi)
+    csc_phi = 1.0 / np.sin(phi)
+    chirp = np.exp(-1j * np.pi * cot_phi * indices**2 / n)
+    norm = np.sqrt((1.0 - 1j * cot_phi) / (n * abs(csc_phi)))
+    return norm * np.fft.ifft(chirp * np.fft.fft(chirp * x))
+
+
+def _ifrft_1d(y: np.ndarray, order: float) -> np.ndarray:
+    n = len(y)
+    if order == 0.0:
+        return np.asarray(y, dtype=complex)
+    if order == 1.0:
+        return np.fft.ifft(y)
+    phi = order * np.pi / 2.0
+    indices = np.arange(n, dtype=np.float64)
+    cot_phi = np.cos(phi) / np.sin(phi)
+    csc_phi = 1.0 / np.sin(phi)
+    chirp = np.exp(-1j * np.pi * cot_phi * indices**2 / n)
+    norm = np.sqrt((1.0 - 1j * cot_phi) / (n * abs(csc_phi)))
+    return (1.0 / norm) * np.conj(chirp) * np.fft.ifft(np.conj(chirp) * np.fft.fft(y))
+
+
 class FrFTTransform:
-    def __init__(self, order: float = 1.0) -> None:
+    def __init__(self, order: float = 0.5, frame_size: int = 1024) -> None:
         self.order = order
+        self.frame_size = frame_size
 
     def forward(self, stereo: np.ndarray) -> TransformRepresentation:
+        import math
         stereo = _validate_stereo(stereo)
-        bins = fft(stereo.T, axis=-1)
-        phase = np.exp(-0.5j * np.pi * self.order)
-        data = bins * phase
+        n_samples = stereo.shape[0]
+        n_padded = math.ceil(n_samples / self.frame_size) * self.frame_size
+        n_pad = n_padded - n_samples
+
+        stereo_padded = np.zeros((n_padded, 2), dtype=np.float64)
+        stereo_padded[:n_samples, :] = stereo
+
+        n_frames = n_padded // self.frame_size
+        out = np.empty((2, n_padded), dtype=complex)
+
+        for ch in range(2):
+            for i in range(n_frames):
+                start = i * self.frame_size
+                end = start + self.frame_size
+                out[ch, start:end] = _frft_1d(stereo_padded[start:end, ch], self.order)
+
         return TransformRepresentation(
-            data=data,
+            data=out,
             original_shape=stereo.shape,
-            metadata={"transform": "frft", "order": self.order, "experimental": True},
+            metadata={
+                "transform": "frft",
+                "order": self.order,
+                "frame_size": self.frame_size,
+                "n_pad": n_pad,
+                "experimental": True,
+            },
         )
 
     def inverse(self, representation: TransformRepresentation) -> np.ndarray:
-        phase = np.exp(-0.5j * np.pi * self.order)
-        channels = ifft(representation.data / phase, axis=-1).real
-        return channels.T[: representation.original_shape[0], :]
+        n_pad: int = representation.metadata["n_pad"]
+        n_padded = representation.data.shape[1]
+        n_samples = representation.original_shape[0]
+
+        out = np.empty((n_padded, 2), dtype=np.float64)
+        for ch in range(2):
+            for i in range(n_padded // self.frame_size):
+                start = i * self.frame_size
+                end = start + self.frame_size
+                out[start:end, ch] = _ifrft_1d(representation.data[ch, start:end], self.order).real
+
+        return out[:n_samples, :]
 
     def inverse_components(
         self, components: np.ndarray, original_shape: tuple[int, int]
     ) -> np.ndarray:
+        import math
+        n_padded = math.ceil(original_shape[0] / self.frame_size) * self.frame_size
+        n_pad = n_padded - original_shape[0]
         representation = TransformRepresentation(
             data=components,
             original_shape=original_shape,
-            metadata={"transform": "frft", "order": self.order, "experimental": True},
+            metadata={
+                "transform": "frft",
+                "order": self.order,
+                "frame_size": self.frame_size,
+                "n_pad": n_pad,
+                "experimental": True,
+            },
         )
         return self.inverse(representation)
 
