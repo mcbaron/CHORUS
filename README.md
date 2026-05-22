@@ -79,3 +79,29 @@ poetry run chorus split input.wav --out-dir out --filters filters.json
 ```
 
 Valid contribution names are `Lc`, `Rc`, `Lo`, `Ro`, `Ls`, and `Rs`. Invalid contribution names, unsupported filter types, and invalid parameter ranges fail before output audio is written.
+
+## v3 Rust/JUCE Validation
+
+Generate Python v2 fixtures:
+
+```bash
+poetry run python scripts/generate_v2_fixtures.py
+```
+
+Run Rust validation:
+
+```bash
+cargo test --manifest-path rust/chorus-dsp/Cargo.toml
+cargo test --manifest-path rust/chorus-ffi/Cargo.toml
+```
+
+Build the plugin after installing JUCE:
+
+```bash
+test -n "$JUCE_DIR"
+cmake -S plugin -B plugin/build -DJUCE_DIR="$JUCE_DIR"
+cmake --build plugin/build
+ctest --test-dir plugin/build --output-on-failure
+```
+
+v3 is not valid until Rust fixture tests match Python v2 outputs and the JUCE wrapper loads in at least one plugin host or validator.
