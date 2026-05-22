@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -142,7 +143,6 @@ class FrFTTransform:
         self.frame_size = frame_size
 
     def forward(self, stereo: np.ndarray) -> TransformRepresentation:
-        import math
         stereo = _validate_stereo(stereo)
         n_samples = stereo.shape[0]
         n_padded = math.ceil(n_samples / self.frame_size) * self.frame_size
@@ -173,8 +173,10 @@ class FrFTTransform:
         )
 
     def inverse(self, representation: TransformRepresentation) -> np.ndarray:
-        n_pad: int = representation.metadata["n_pad"]
         n_padded = representation.data.shape[1]
+        assert n_padded % self.frame_size == 0, (
+            f"data length {n_padded} is not a multiple of frame_size {self.frame_size}"
+        )
         n_samples = representation.original_shape[0]
 
         out = np.empty((n_padded, 2), dtype=np.float64)
@@ -189,7 +191,6 @@ class FrFTTransform:
     def inverse_components(
         self, components: np.ndarray, original_shape: tuple[int, int]
     ) -> np.ndarray:
-        import math
         n_padded = math.ceil(original_shape[0] / self.frame_size) * self.frame_size
         n_pad = n_padded - original_shape[0]
         representation = TransformRepresentation(
