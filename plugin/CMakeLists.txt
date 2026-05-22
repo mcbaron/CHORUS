@@ -26,3 +26,9 @@ add_dependencies(CHORUSPlugin CHORUSRustFFI)
 
 target_compile_features(CHORUSPlugin PRIVATE cxx_std_17)
 target_link_libraries(CHORUSPlugin PRIVATE juce::juce_audio_utils ${CHORUS_FFI_LIB})
+
+add_executable(CHORUSPluginSmoke tests/plugin_smoke.cpp)
+target_link_libraries(CHORUSPluginSmoke PRIVATE CHORUSPlugin juce::juce_audio_utils)
+add_dependencies(CHORUSPluginSmoke CHORUSRustFFI)
+enable_testing()
+add_test(NAME CHORUSPluginSmoke COMMAND CHORUSPluginSmoke)
