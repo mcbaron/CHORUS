@@ -119,7 +119,7 @@ struct BenchResult {
 }
 
 /// Feed `audio` through `ChorusDsp` in `callback_size`-sample chunks.
-/// Returns timing statistics and the sample index of first non-empty output.
+/// Returns timing statistics and the count of input samples consumed before first non-empty output.
 fn measure_combo(
     audio: &[[f64; 2]],
     callback_size: usize,
@@ -147,17 +147,23 @@ fn measure_combo(
         }
     }
 
+    assert!(
+        !call_times_us.is_empty(),
+        "measure_combo: audio produced no callbacks (empty audio slice?)"
+    );
+
     // Sort for percentile calculation (operates on a copy)
     let mut sorted = call_times_us.clone();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(|a, b| a.total_cmp(b));
 
-    let n = sorted.len();
+    let n = call_times_us.len();
     let mean_us = call_times_us.iter().sum::<f64>() / n as f64;
-    let p95_us = sorted[(n as f64 * 0.95) as usize];
+    let p95_us = sorted[((n as f64 * 0.95) as usize).min(n - 1)];
     let max_us = sorted[n - 1];
 
     // Budget: samples_in_callback / sample_rate, in microseconds
-    let callback_budget_us = callback_size as f64 / 48_000.0 * 1_000_000.0;
+    const SAMPLE_RATE: f64 = 48_000.0;
+    let callback_budget_us = callback_size as f64 / SAMPLE_RATE * 1_000_000.0;
     let real_time_safe = p95_us <= callback_budget_us;
 
     BenchResult {
