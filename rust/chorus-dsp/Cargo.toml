@@ -9,6 +9,7 @@ serde_json = "1"
 thiserror = "1"
 rustfft = "6"
 num-complex = "0.4"
+hound = "3"
 
 [dev-dependencies]
 approx = "0.5"

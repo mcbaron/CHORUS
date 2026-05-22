@@ -1,6 +1,51 @@
 use chorus_dsp::{ChorusDsp, DspConfig};
 use chorus_dsp::transforms::TransformKind;
 use chorus_dsp::filters::unity_chains;
+use std::path::Path;
+
+/// Load a WAV file as stereo f64 samples normalized to [-1.0, 1.0].
+/// Mono files are duplicated to both channels.
+/// Truncates to `max_samples` stereo frames if the file is longer.
+fn load_wav_stereo(path: &Path, max_samples: usize) -> Vec<[f64; 2]> {
+    let mut reader = hound::WavReader::open(path)
+        .unwrap_or_else(|e| panic!("load_wav_stereo: cannot open {}: {e}", path.display()));
+    let spec = reader.spec();
+    let num_channels = spec.channels as usize;
+    assert!(
+        num_channels <= 2,
+        "load_wav_stereo: expected mono or stereo, got {} channels in {}",
+        num_channels,
+        path.display()
+    );
+
+    let scale = match spec.sample_format {
+        hound::SampleFormat::Float => 1.0_f64,
+        hound::SampleFormat::Int => {
+            1.0 / (1_i64
+                .checked_shl(spec.bits_per_sample as u32 - 1)
+                .unwrap_or(1) as f64)
+        }
+    };
+
+    let raw: Vec<f64> = match spec.sample_format {
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .map(|s| s.expect("read error") as f64)
+            .collect(),
+        hound::SampleFormat::Int => reader
+            .samples::<i32>()
+            .map(|s| s.expect("read error") as f64 * scale)
+            .collect(),
+    };
+
+    let stereo: Vec<[f64; 2]> = if num_channels == 2 {
+        raw.chunks(2).map(|c| [c[0], c[1]]).collect()
+    } else {
+        raw.iter().map(|&s| [s, s]).collect()
+    };
+
+    stereo.into_iter().take(max_samples).collect()
+}
 
 fn make_config(frame_size: usize, hop_size: usize) -> DspConfig {
     DspConfig {
