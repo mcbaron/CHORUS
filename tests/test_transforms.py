@@ -2,7 +2,20 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import soundfile as sf
 from chorus.transforms import FrFTTransform, STFTConfig, STFTTransform, WaveletTransform
+
+WAV_FILES = [
+    "tests/test_tracks_wav/PinkPanther.wav",
+    "tests/test_tracks_wav/TVSong.wav",
+]
+
+
+def _load_wav_stereo(wav_path: str) -> np.ndarray:
+    audio, _ = sf.read(wav_path, dtype="float64")
+    if audio.ndim == 1:
+        audio = np.column_stack([audio, audio])
+    return audio
 
 
 def test_stft_round_trip_pass_through_stereo(stereo_identical: np.ndarray) -> None:
@@ -77,3 +90,36 @@ def test_wavelet_round_trip_pass_through_stereo(stereo_identical: np.ndarray) ->
 
     assert reconstructed.shape == stereo_identical.shape
     np.testing.assert_allclose(reconstructed, stereo_identical, atol=1e-10, rtol=1e-10)
+
+
+@pytest.mark.parametrize("wav_path", WAV_FILES)
+def test_stft_round_trip_wav(wav_path: str) -> None:
+    audio = _load_wav_stereo(wav_path)
+    transform = STFTTransform(STFTConfig(frame_size=1024, hop_size=512))
+
+    representation = transform.forward(audio)
+    reconstructed = transform.inverse(representation)
+
+    np.testing.assert_allclose(reconstructed, audio, atol=1e-10, rtol=1e-10)
+
+
+@pytest.mark.parametrize("wav_path", WAV_FILES)
+def test_frft_round_trip_wav(wav_path: str) -> None:
+    audio = _load_wav_stereo(wav_path)
+    transform = FrFTTransform(order=0.5)
+
+    representation = transform.forward(audio)
+    reconstructed = transform.inverse(representation)
+
+    np.testing.assert_allclose(reconstructed, audio, atol=1e-10, rtol=1e-10)
+
+
+@pytest.mark.parametrize("wav_path", WAV_FILES)
+def test_wavelet_round_trip_wav(wav_path: str) -> None:
+    audio = _load_wav_stereo(wav_path)
+    transform = WaveletTransform(wavelet="db4", level=3)
+
+    representation = transform.forward(audio)
+    reconstructed = transform.inverse(representation)
+
+    np.testing.assert_allclose(reconstructed, audio, atol=1e-10, rtol=1e-10)

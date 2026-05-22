@@ -7,3 +7,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+.DS_Store
+.claude/
+rust/*/target/
+rust/chorus-dsp/Cargo.lock
