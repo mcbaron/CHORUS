@@ -31,6 +31,13 @@ fn rust_matches_python_frft_fixture() {
 }
 
 #[test]
+#[ignore = "EQ biquad not yet implemented: FilterSpec::Eq panics; see follow-on task in design spec"]
+fn rust_matches_python_known_eq_preset_fixture() {
+    // Enable once FilterSpec::Eq is implemented with per-bin biquad coefficients.
+    todo!()
+}
+
+#[test]
 fn rust_matches_python_unity_bypass_fixture() {
     let input = load_stereo("unity_bypass.input.npy");
     let mut dsp = ChorusDsp::new(DspConfig::default()); // STFT by default

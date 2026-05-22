@@ -5,6 +5,7 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DspConfig {
+    /// Note: sample_rate is not currently forwarded to transform constructors (transforms use fixed 48kHz defaults).
     pub sample_rate: u32,
     pub epsilon: f64,
     pub filter_chains: FilterChains,
@@ -41,6 +42,7 @@ pub enum ChorusError {
 }
 
 pub struct ChorusDsp {
+    // Retained for inspection/serialization; transform reconfiguration requires re-constructing ChorusDsp.
     #[allow(dead_code)]
     config: DspConfig,
     transform: Box<dyn Transform>,
@@ -110,9 +112,7 @@ mod tests {
         let output = dsp.process(&input).unwrap();
         let skip = 1024; // skip warm-up
         let compare_len = output.len().min(input.len()).saturating_sub(skip);
-        if compare_len == 0 {
-            return; // not enough output yet
-        }
+        assert!(compare_len > 0, "expected output after warm-up, but got only {} output samples", output.len());
         for i in skip..skip + compare_len {
             let diff_l = (output[i][0] - input[i][0]).abs();
             let diff_r = (output[i][1] - input[i][1]).abs();
