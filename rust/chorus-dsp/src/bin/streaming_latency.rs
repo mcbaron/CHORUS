@@ -186,4 +186,86 @@ fn main() {
         sanity_check(fs, hs);
     }
     println!("All sanity checks passed.\n");
+
+    // --- Build audio sources ---
+    const MAX_FRAMES: usize = 480_000; // 10 seconds at 48 kHz
+    const SAMPLE_RATE: f64 = 48_000.0;
+
+    let synthetic: Vec<[f64; 2]> = (0..MAX_FRAMES)
+        .map(|i| {
+            let t = i as f64 / SAMPLE_RATE;
+            let s = (2.0 * std::f64::consts::PI * 440.0 * t).sin() * 0.5;
+            [s, s]
+        })
+        .collect();
+
+    let silence: Vec<[f64; 2]> = vec![[0.0_f64, 0.0]; MAX_FRAMES];
+
+    let wav_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_audio.wav");
+    let fixture: Option<(String, Vec<[f64; 2]>)> = if wav_path.exists() {
+        Some(("fixture_wav".to_string(), load_wav_stereo(&wav_path, MAX_FRAMES)))
+    } else {
+        None
+    };
+
+    // Collect sources: (name, audio)
+    let mut sources: Vec<(&str, &[[f64; 2]])> = vec![
+        ("synthetic", synthetic.as_slice()),
+        ("silence", silence.as_slice()),
+    ];
+    // Borrow fixture outside the if-let so it lives long enough
+    if let Some((ref name, ref audio)) = fixture {
+        sources.push((name.as_str(), audio.as_slice()));
+    }
+
+    // --- Parameter sweep ---
+    let callback_sizes: &[usize] = &[128, 256, 512, 1024];
+    let frame_hop_pairs: &[(usize, usize)] = &[(256, 128), (512, 256), (1024, 512)];
+
+    println!("=== Parameter Sweep ===");
+    let mut results: Vec<BenchResult> = Vec::new();
+
+    for (source_name, audio) in &sources {
+        for &cb_sz in callback_sizes {
+            for &(fr_sz, hop_sz) in frame_hop_pairs {
+                let r = measure_combo(audio, cb_sz, fr_sz, hop_sz, source_name);
+                results.push(r);
+            }
+        }
+    }
+
+    // --- Print table ---
+    println!(
+        "{:<15} | {:>5} | {:>5} | {:>5} | {:>8} | {:>7} | {:>7} | {:>10} | {:>9} | {}",
+        "source", "cb_sz", "fr_sz", "hop", "mean_us", "p95_us", "max_us", "budget_us", "first_out", "rt_safe"
+    );
+    println!("{}", "-".repeat(96));
+
+    for r in &results {
+        let first_out_str = if r.samples_until_first_output == usize::MAX {
+            "never".to_string()
+        } else {
+            r.samples_until_first_output.to_string()
+        };
+        let rt_safe_str = if r.real_time_safe { "YES" } else { "NO" };
+        println!(
+            "{:<15} | {:>5} | {:>5} | {:>5} | {:>8.2} | {:>7.2} | {:>7.2} | {:>10.2} | {:>9} | {}",
+            r.source_name,
+            r.callback_size,
+            r.frame_size,
+            r.hop_size,
+            r.mean_us,
+            r.p95_us,
+            r.max_us,
+            r.callback_budget_us,
+            first_out_str,
+            rt_safe_str,
+        );
+    }
+
+    // --- Summary ---
+    let rt_safe_count = results.iter().filter(|r| r.real_time_safe).count();
+    let total = results.len();
+    println!("\nSummary: {rt_safe_count}/{total} combinations are real-time safe.");
 }
