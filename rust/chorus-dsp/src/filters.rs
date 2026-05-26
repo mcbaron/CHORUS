@@ -1,3 +1,4 @@
+use num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -101,6 +102,92 @@ pub fn chain_scalar(chains: &FilterChains, name: &str, soloed: &[String]) -> f64
     scalar
 }
 
+/// Compute per-bin complex frequency response H(e^{jω}) for a biquad EQ filter.
+///
+/// `bins_count` = frame_size / 2 + 1 (number of one-sided RFFT bins).
+/// Bin k corresponds to ω_k = 2π·k / (2·(bins_count − 1)).
+///
+/// Modes: "highpass" and "lowpass" use 2nd-order Butterworth via bilinear transform.
+/// "peaking" (default) uses iirpeak with H_total = 1 + H_peak·(A − 1).
+pub fn eq_frequency_response(
+    mode: &str,
+    frequency_hz: f64,
+    q: f64,
+    gain_db: f64,
+    sample_rate: u32,
+    bins_count: usize,
+) -> Vec<Complex<f64>> {
+    use std::f64::consts::PI;
+
+    let fs = sample_rate as f64;
+    let n = 2 * (bins_count.saturating_sub(1)).max(1);
+
+    let mut h = Vec::with_capacity(bins_count);
+
+    match mode {
+        "highpass" => {
+            let kw = (PI * frequency_hz / fs).tan();
+            let denom = 1.0 + 2.0_f64.sqrt() * kw + kw * kw;
+            let b0 = 1.0 / denom;
+            let b1 = -2.0 * b0;
+            let b2 = b0;
+            let a1 = 2.0 * (kw * kw - 1.0) / denom;
+            let a2 = (1.0 - 2.0_f64.sqrt() * kw + kw * kw) / denom;
+
+            for k in 0..bins_count {
+                let omega = 2.0 * PI * k as f64 / n as f64;
+                let z_inv = Complex::from_polar(1.0, -omega);
+                let z_inv2 = Complex::from_polar(1.0, -2.0 * omega);
+                let num = b0 + b1 * z_inv + b2 * z_inv2;
+                let den = Complex::new(1.0, 0.0) + a1 * z_inv + a2 * z_inv2;
+                h.push(num / den);
+            }
+        }
+        "lowpass" => {
+            let kw = (PI * frequency_hz / fs).tan();
+            let denom = 1.0 + 2.0_f64.sqrt() * kw + kw * kw;
+            let b0 = kw * kw / denom;
+            let b1 = 2.0 * b0;
+            let b2 = b0;
+            let a1 = 2.0 * (kw * kw - 1.0) / denom;
+            let a2 = (1.0 - 2.0_f64.sqrt() * kw + kw * kw) / denom;
+
+            for k in 0..bins_count {
+                let omega = 2.0 * PI * k as f64 / n as f64;
+                let z_inv = Complex::from_polar(1.0, -omega);
+                let z_inv2 = Complex::from_polar(1.0, -2.0 * omega);
+                let num = b0 + b1 * z_inv + b2 * z_inv2;
+                let den = Complex::new(1.0, 0.0) + a1 * z_inv + a2 * z_inv2;
+                h.push(num / den);
+            }
+        }
+        _ => {
+            // peaking: H_total = 1 + H_peak * (A - 1)
+            let w0 = 2.0 * PI * frequency_hz / fs;
+            let bw = w0 / q;
+            let t_bw2 = (bw / 2.0).tan();
+            let a0 = 1.0 + t_bw2;
+            let b0_peak = t_bw2 / a0;
+            let b2_peak = -t_bw2 / a0;
+            let a1_peak = -2.0 * w0.cos() / a0;
+            let a2_peak = (1.0 - t_bw2) / a0;
+            let a_lin = 10.0_f64.powf(gain_db / 20.0);
+
+            for k in 0..bins_count {
+                let omega = 2.0 * PI * k as f64 / n as f64;
+                let z_inv = Complex::from_polar(1.0, -omega);
+                let z_inv2 = Complex::from_polar(1.0, -2.0 * omega);
+                let num_peak = b0_peak + b2_peak * z_inv2;
+                let den_peak = Complex::new(1.0, 0.0) + a1_peak * z_inv + a2_peak * z_inv2;
+                let h_peak = num_peak / den_peak;
+                h.push(Complex::new(1.0, 0.0) + h_peak * (a_lin - 1.0));
+            }
+        }
+    }
+
+    h
+}
+
 #[cfg(test)]
 mod tests {
     use super::{apply_chains, unity_chains, FilterSpec};
@@ -118,5 +205,60 @@ mod tests {
         assert!(output["Lc"][0] > 1.99);
         assert_eq!(output["Rs"], vec![-1.0, -1.0]);
         assert_eq!(output["Rc"], vec![1.0, 1.0]);
+    }
+
+    #[test]
+    fn eq_highpass_attenuates_below_cutoff() {
+        let sample_rate = 48_000u32;
+        let bins_count = 1024usize;
+        let h = super::eq_frequency_response("highpass", 1000.0, 0.707, 0.0, sample_rate, bins_count);
+        // DC bin is exactly 0 for any highpass
+        assert!(
+            h[0].norm() < 0.1,
+            "DC bin |H|={} should be < 0.1 for highpass at 1000 Hz",
+            h[0].norm()
+        );
+        // Bin 5 ≈ 117 Hz — well below the 1000 Hz cutoff, so a 2nd-order Butterworth
+        // attenuates this deeply (|H| << 0.1)
+        assert!(
+            h[5].norm() < 0.1,
+            "Bin 5 |H|={} should be < 0.1 for highpass at 1000 Hz",
+            h[5].norm()
+        );
+    }
+
+    #[test]
+    fn eq_peaking_boosts_center_bin() {
+        let sample_rate = 48_000u32;
+        let bins_count = 4096usize;
+        let h = super::eq_frequency_response("peaking", 1000.0, 10.0, 6.0, sample_rate, bins_count);
+        let peak_norm = h.iter().map(|c| c.norm()).fold(0.0_f64, f64::max);
+        let expected_a = 10.0_f64.powf(6.0 / 20.0);
+        assert!(
+            (peak_norm - expected_a).abs() < 0.1,
+            "Peak |H|={} should be ≈ {} (6 dB linear)",
+            peak_norm, expected_a
+        );
+    }
+
+    #[test]
+    fn eq_chain_compose_multiplies_responses() {
+        let sample_rate = 48_000u32;
+        let bins_count = 512usize;
+        let h1 = super::eq_frequency_response("highpass", 500.0, 0.707, 0.0, sample_rate, bins_count);
+        let h2 = super::eq_frequency_response("highpass", 1000.0, 0.707, 0.0, sample_rate, bins_count);
+        // Use bin 5 (≈235 Hz with these params) — nonzero but attenuated by both filters.
+        // DC (bin 0) is exactly 0 for highpass, making 0 < 0 comparisons vacuously false.
+        let combined = h1[5] * h2[5];
+        assert!(
+            combined.norm() < h1[5].norm(),
+            "Combined bin 5 |H|={} should be less than h1 alone |H|={}",
+            combined.norm(), h1[5].norm()
+        );
+        assert!(
+            combined.norm() < h2[5].norm(),
+            "Combined bin 5 |H|={} should be less than h2 alone |H|={}",
+            combined.norm(), h2[5].norm()
+        );
     }
 }
