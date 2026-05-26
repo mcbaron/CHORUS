@@ -149,6 +149,16 @@ def test_frft_round_trip_wav(wav_path: str) -> None:
 
 
 @pytest.mark.parametrize("wav_path", WAV_FILES)
+def test_frft_ozaktas_round_trip_wav(wav_path: str) -> None:
+    """Ozaktas-Kutay FrFT must round-trip real WAV files within 1e-10."""
+    audio = _load_wav_stereo(wav_path)
+    t = FrFTTransform(order=0.5, frame_size=1024)
+    rep = t.forward(audio)
+    recovered = t.inverse(rep)
+    np.testing.assert_allclose(recovered, audio, atol=1e-10)
+
+
+@pytest.mark.parametrize("wav_path", WAV_FILES)
 def test_wavelet_round_trip_wav(wav_path: str) -> None:
     audio = _load_wav_stereo(wav_path)
     transform = WaveletTransform(wavelet="db4", level=3)
