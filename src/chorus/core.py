@@ -21,6 +21,10 @@ class ChorusConfig:
     epsilon: float = 1e-9
     filter_chains: FilterChains | None = None
 
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.frft_order <= 2.0):
+            raise ValueError(f"frft_order must be in [0.0, 2.0], got {self.frft_order}")
+
 
 @dataclass(frozen=True)
 class ChorusResult:

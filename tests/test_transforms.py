@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.transforms import FrFTTransform, STFTConfig, STFTTransform, WaveletTransform
 
 WAV_FILES = [
@@ -160,8 +161,6 @@ def test_wavelet_round_trip_wav(wav_path: str) -> None:
 
 def test_frft_transform_respects_order_from_config() -> None:
     """FrFTTransform constructed via ChorusConfig must use frft_order."""
-    from chorus.core import ChorusConfig, ChorusProcessor
-
     config = ChorusConfig(sample_rate=48_000, transform="frft", frft_order=0.25, frame_size=1024)
     processor = ChorusProcessor(config)
     assert processor.transform.order == 0.25
