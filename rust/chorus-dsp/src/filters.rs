@@ -238,7 +238,10 @@ pub fn apply_eq_to_real_signal(
 
     let mut ifft_buf: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); n];
     ifft_buf[..num_bins].copy_from_slice(&spectrum);
-    for k in 1..num_bins - 1 {
+    // For even n, Nyquist bin (num_bins-1) is real-valued and self-conjugate — do not mirror it.
+    // For odd n, all non-DC bins need mirroring.
+    let mirror_end = if n % 2 == 0 { num_bins - 1 } else { num_bins };
+    for k in 1..mirror_end {
         ifft_buf[n - k] = spectrum[k].conj();
     }
     let ifft = planner.plan_fft_inverse(n);
@@ -361,6 +364,26 @@ mod tests {
             "Peak |H|={} should be ≈ {} (6 dB linear)",
             peak_norm, expected_a
         );
+    }
+
+    #[test]
+    fn apply_eq_to_real_signal_unity_roundtrip_odd_length() {
+        // Unity EQ (gain_db=0 peaking with very high Q → no effect) should return
+        // a signal close to the input for odd n.
+        // Use highpass at 0 Hz ≈ unity (or just use a sine and check finite + non-corrupt).
+        // Actually: apply lowpass at near-Nyquist, should be close to identity.
+        // Simpler: apply gain=0 peaking at some freq and verify round-trip.
+        // Use peaking with gain_db=0.0 → a_lin=1.0 → H_total = 1 + H_peak * 0 = 1 everywhere
+        let n = 7usize; // odd
+        let signal: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let result = super::apply_eq_to_real_signal(&signal, "peaking", 1000.0, 1.0, 0.0, 48_000);
+        assert_eq!(result.len(), n);
+        for (orig, got) in signal.iter().zip(result.iter()) {
+            assert!(
+                (orig - got).abs() < 1e-10,
+                "Round-trip mismatch at odd n=7: orig={orig}, got={got}"
+            );
+        }
     }
 
     #[test]
