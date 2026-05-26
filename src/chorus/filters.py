@@ -94,28 +94,23 @@ def _eq_frequency_response(spec: FilterSpec, sample_rate: int, n: int) -> np.nda
     gain_db = float(spec.parameters.get("gain_db", 0.0))
 
     num_bins = n // 2 + 1
-    # Bin frequencies: omega_k = 2*pi*k / n  (k = 0 .. num_bins-1)
     k = np.arange(num_bins, dtype=np.float64)
     omega = 2.0 * np.pi * k / n
-    z_inv = np.exp(-1j * omega)          # e^{-j*omega} per bin
-    z_inv2 = np.exp(-2j * omega)         # e^{-2j*omega} per bin
+    z_inv = np.exp(-1j * omega)
+    z_inv2 = np.exp(-2j * omega)
 
     if mode == "highpass":
-        fc = float(frequency)
-        fs = float(sample_rate)
-        kw = np.tan(np.pi * fc / fs)
+        kw = np.tan(np.pi * frequency / float(sample_rate))
         denom = 1.0 + np.sqrt(2.0) * kw + kw ** 2
         b0 =  1.0 / denom
         b1 = -2.0 * b0
         b2 =  b0
-        a1 =  2.0 * (kw ** 2 - 1.0) * b0
-        a2 =  (1.0 - np.sqrt(2.0) * kw + kw ** 2) * b0
+        a1 =  2.0 * (kw ** 2 - 1.0) / denom
+        a2 =  (1.0 - np.sqrt(2.0) * kw + kw ** 2) / denom
         h = (b0 + b1 * z_inv + b2 * z_inv2) / (1.0 + a1 * z_inv + a2 * z_inv2)
 
     elif mode == "lowpass":
-        fc = float(frequency)
-        fs = float(sample_rate)
-        kw = np.tan(np.pi * fc / fs)
+        kw = np.tan(np.pi * frequency / float(sample_rate))
         denom = 1.0 + np.sqrt(2.0) * kw + kw ** 2
         b0 = kw ** 2 / denom
         b1 = 2.0 * b0
@@ -126,11 +121,9 @@ def _eq_frequency_response(spec: FilterSpec, sample_rate: int, n: int) -> np.nda
 
     else:
         # Peaking: H_total(omega) = 1 + H_peak(omega) * (A - 1)
-        # iirpeak coefficients: w0 = 2*pi*f0/fs, bw = w0/Q
         w0 = 2.0 * np.pi * frequency / sample_rate
         bw = w0 / q
         t_bw2 = np.tan(bw / 2.0)
-        # Unnormalized: b = [t_bw2, 0, -t_bw2], a = [1+t_bw2, -2*cos(w0), 1-t_bw2]
         a0 = 1.0 + t_bw2
         b0_peak =  t_bw2 / a0
         b1_peak =  0.0
