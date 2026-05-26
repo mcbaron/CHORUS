@@ -86,20 +86,97 @@ def _apply_spec(audio: np.ndarray, spec: FilterSpec, sample_rate: int) -> np.nda
     raise ValueError(f"unsupported filter type {spec.type!r}")
 
 
-def _apply_eq(audio: np.ndarray, spec: FilterSpec, sample_rate: int) -> np.ndarray:
+def _eq_frequency_response(spec: FilterSpec, sample_rate: int, n: int) -> np.ndarray:
+    """Return complex frequency response array of shape (n//2 + 1,) for a biquad EQ spec."""
     mode = str(spec.parameters.get("mode", "peaking"))
     frequency = float(spec.parameters["frequency_hz"])
     q = float(spec.parameters.get("q", 0.707))
     gain_db = float(spec.parameters.get("gain_db", 0.0))
+
+    num_bins = n // 2 + 1
+    # Bin frequencies: omega_k = 2*pi*k / n  (k = 0 .. num_bins-1)
+    k = np.arange(num_bins, dtype=np.float64)
+    omega = 2.0 * np.pi * k / n
+    z_inv = np.exp(-1j * omega)          # e^{-j*omega} per bin
+    z_inv2 = np.exp(-2j * omega)         # e^{-2j*omega} per bin
+
     if mode == "highpass":
-        sos = signal.butter(2, frequency, btype="highpass", fs=sample_rate, output="sos")
+        # 4th-order Butterworth highpass: two cascaded 2nd-order biquad sections
+        # Pole angles for 4th-order Butterworth: pi*(2k+N+1)/(2N) for k=0..N-1
+        # Section 1: Q1 = 1/(2*cos(3*pi/8)); Section 2: Q2 = 1/(2*cos(pi/8))
+        fc = float(frequency)
+        fs = float(sample_rate)
+        kw = np.tan(np.pi * fc / fs)     # pre-warped angular frequency
+        # Section 1 (Q = 1/(2*cos(3*pi/8)) ~ 1.3066)
+        sq1 = 2.0 * np.cos(3.0 * np.pi / 8.0)   # sqrt(2-sqrt(2))
+        denom1 = 1.0 + sq1 * kw + kw ** 2
+        b0_1 = 1.0 / denom1
+        b1_1 = -2.0 * b0_1
+        b2_1 = b0_1
+        a1_1 = 2.0 * (kw ** 2 - 1.0) / denom1
+        a2_1 = (1.0 - sq1 * kw + kw ** 2) / denom1
+        # Section 2 (Q = 1/(2*cos(pi/8)) ~ 0.5412)
+        sq2 = 2.0 * np.cos(np.pi / 8.0)          # sqrt(2+sqrt(2))
+        denom2 = 1.0 + sq2 * kw + kw ** 2
+        b0_2 = 1.0 / denom2
+        b1_2 = -2.0 * b0_2
+        b2_2 = b0_2
+        a1_2 = 2.0 * (kw ** 2 - 1.0) / denom2
+        a2_2 = (1.0 - sq2 * kw + kw ** 2) / denom2
+        h1 = (b0_1 + b1_1 * z_inv + b2_1 * z_inv2) / (1.0 + a1_1 * z_inv + a2_1 * z_inv2)
+        h2 = (b0_2 + b1_2 * z_inv + b2_2 * z_inv2) / (1.0 + a1_2 * z_inv + a2_2 * z_inv2)
+        h = h1 * h2
+
     elif mode == "lowpass":
-        sos = signal.butter(2, frequency, btype="lowpass", fs=sample_rate, output="sos")
+        # 4th-order Butterworth lowpass: two cascaded 2nd-order biquad sections
+        fc = float(frequency)
+        fs = float(sample_rate)
+        kw = np.tan(np.pi * fc / fs)
+        # Section 1 (Q = 1/(2*cos(3*pi/8)) ~ 1.3066)
+        sq1 = 2.0 * np.cos(3.0 * np.pi / 8.0)
+        denom1 = 1.0 + sq1 * kw + kw ** 2
+        b0_1 = kw ** 2 / denom1
+        b1_1 = 2.0 * b0_1
+        b2_1 = b0_1
+        a1_1 = 2.0 * (kw ** 2 - 1.0) / denom1
+        a2_1 = (1.0 - sq1 * kw + kw ** 2) / denom1
+        # Section 2 (Q = 1/(2*cos(pi/8)) ~ 0.5412)
+        sq2 = 2.0 * np.cos(np.pi / 8.0)
+        denom2 = 1.0 + sq2 * kw + kw ** 2
+        b0_2 = kw ** 2 / denom2
+        b1_2 = 2.0 * b0_2
+        b2_2 = b0_2
+        a1_2 = 2.0 * (kw ** 2 - 1.0) / denom2
+        a2_2 = (1.0 - sq2 * kw + kw ** 2) / denom2
+        h1 = (b0_1 + b1_1 * z_inv + b2_1 * z_inv2) / (1.0 + a1_1 * z_inv + a2_1 * z_inv2)
+        h2 = (b0_2 + b1_2 * z_inv + b2_2 * z_inv2) / (1.0 + a1_2 * z_inv + a2_2 * z_inv2)
+        h = h1 * h2
+
     else:
-        b, a = signal.iirpeak(frequency, q, fs=sample_rate)
-        filtered = signal.lfilter(b, a, audio)
-        return audio + filtered * (10.0 ** (gain_db / 20.0) - 1.0)
-    return signal.sosfilt(sos, audio)
+        # Peaking: H_total(omega) = 1 + H_peak(omega) * (A - 1)
+        # iirpeak coefficients: w0 = 2*pi*f0/fs, bw = w0/Q
+        w0 = 2.0 * np.pi * frequency / sample_rate
+        bw = w0 / q
+        t_bw2 = np.tan(bw / 2.0)
+        # Unnormalized: b = [t_bw2, 0, -t_bw2], a = [1+t_bw2, -2*cos(w0), 1-t_bw2]
+        a0 = 1.0 + t_bw2
+        b0_peak =  t_bw2 / a0
+        b1_peak =  0.0
+        b2_peak = -t_bw2 / a0
+        a1_peak = -2.0 * np.cos(w0) / a0
+        a2_peak = (1.0 - t_bw2) / a0
+        h_peak = (b0_peak + b1_peak * z_inv + b2_peak * z_inv2) / (1.0 + a1_peak * z_inv + a2_peak * z_inv2)
+        a_lin = 10.0 ** (gain_db / 20.0)
+        h = 1.0 + h_peak * (a_lin - 1.0)
+
+    return h
+
+
+def _apply_eq(audio: np.ndarray, spec: FilterSpec, sample_rate: int) -> np.ndarray:
+    n = len(audio)
+    h = _eq_frequency_response(spec, sample_rate, n)
+    spectrum = np.fft.rfft(audio)
+    return np.fft.irfft(spectrum * h, n=n)
 
 
 def _ensure_finite(name: str, audio: np.ndarray) -> None:

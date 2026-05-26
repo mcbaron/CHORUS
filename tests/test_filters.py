@@ -95,3 +95,37 @@ def test_solo_mutes_non_solo_contributions() -> None:
     for name in CONTRIBUTIONS - {"Lo"}:
         np.testing.assert_allclose(filtered[name], np.zeros(8))
     assert report["soloed"] == ["Lo"]
+
+
+def test_eq_highpass_attenuates_below_cutoff() -> None:
+    """Highpass at 1000 Hz should attenuate a 440 Hz sine by more than 20 dB."""
+    sample_rate = 48_000
+    n = 4096
+    t = np.arange(n) / sample_rate
+    audio = np.sin(2.0 * np.pi * 440.0 * t)
+
+    contributions = {name: (audio.copy() if name == "Lo" else np.zeros(n)) for name in CONTRIBUTIONS}
+    chains = normalize_filter_config({"Lo": [{"type": "eq", "mode": "highpass", "frequency_hz": 1000.0, "q": 0.707}]})
+    filtered, _ = apply_filter_chains(contributions, chains, sample_rate)
+
+    input_rms = float(np.sqrt(np.mean(audio ** 2)))
+    output_rms = float(np.sqrt(np.mean(filtered["Lo"] ** 2)))
+    ratio_db = 20.0 * np.log10(output_rms / input_rms + 1e-12)
+    assert ratio_db < -20.0, f"Expected > 20 dB attenuation, got {ratio_db:.1f} dB"
+
+
+def test_eq_peaking_boosts_center_frequency() -> None:
+    """Peaking EQ at 1000 Hz with +6 dB should amplify a 1000 Hz sine by ~6 dB."""
+    sample_rate = 48_000
+    n = 4096
+    t = np.arange(n) / sample_rate
+    audio = np.sin(2.0 * np.pi * 1000.0 * t)
+
+    contributions = {name: (audio.copy() if name == "Lo" else np.zeros(n)) for name in CONTRIBUTIONS}
+    chains = normalize_filter_config({"Lo": [{"type": "eq", "mode": "peaking", "frequency_hz": 1000.0, "q": 10.0, "gain_db": 6.0}]})
+    filtered, _ = apply_filter_chains(contributions, chains, sample_rate)
+
+    input_rms = float(np.sqrt(np.mean(audio ** 2)))
+    output_rms = float(np.sqrt(np.mean(filtered["Lo"] ** 2)))
+    ratio_db = 20.0 * np.log10(output_rms / (input_rms + 1e-12))
+    assert 4.0 < ratio_db < 8.0, f"Expected ~6 dB boost, got {ratio_db:.1f} dB"
