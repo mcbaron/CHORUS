@@ -3,6 +3,8 @@ use chorus_dsp::transforms::TransformKind;
 use chorus_dsp::filters::unity_chains;
 use std::path::Path;
 
+const SAMPLE_RATE: f64 = 48_000.0;
+
 /// Load a WAV file as stereo f64 samples normalized to [-1.0, 1.0].
 /// Mono files are duplicated to both channels.
 /// Truncates to `max_samples` stereo frames if the file is longer.
@@ -162,9 +164,8 @@ fn measure_combo(
     let max_us = sorted[n - 1];
 
     // Budget: samples_in_callback / sample_rate, in microseconds
-    const SAMPLE_RATE: f64 = 48_000.0;
     let callback_budget_us = callback_size as f64 / SAMPLE_RATE * 1_000_000.0;
-    let real_time_safe = p95_us <= callback_budget_us;
+    let real_time_safe = max_us <= callback_budget_us;
 
     BenchResult {
         callback_size,
@@ -189,7 +190,6 @@ fn main() {
 
     // --- Build audio sources ---
     const MAX_FRAMES: usize = 480_000; // 10 seconds at 48 kHz
-    const SAMPLE_RATE: f64 = 48_000.0;
 
     let synthetic: Vec<[f64; 2]> = (0..MAX_FRAMES)
         .map(|i| {
