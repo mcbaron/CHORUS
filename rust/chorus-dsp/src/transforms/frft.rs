@@ -1,7 +1,3 @@
-// TODO(follow-on): Python FrFTTransform uses phase-shifted FFT (FFT * exp(-0.5j*pi*order)),
-// not true FrFT. Rust implements a unitary 2-chirp discrete FrFT.  Python must be updated
-// before Rust/Python FrFT fixture parity is possible.
-
 use std::collections::VecDeque;
 use std::sync::Arc;
 use num_complex::Complex;

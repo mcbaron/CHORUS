@@ -23,11 +23,24 @@ fn assert_close(actual: &[[f64; 2]], expected: &[[f64; 2]], tolerance: f64) {
 }
 
 #[test]
-#[ignore = "FrFT fixture parity blocked: Python uses phase-shifted FFT, not true FrFT; see TODO in frft.rs"]
 fn rust_matches_python_frft_fixture() {
-    // Enable once Python FrFTTransform is updated to Ozaktas-Kutay algorithm.
-    // Until then, Rust and Python FrFT outputs are not comparable.
-    todo!()
+    use chorus_dsp::TransformKind;
+    let input = load_stereo("frft_unity_bypass.input.npy");
+    let config = DspConfig {
+        transform: TransformKind::Frft {
+            order: 0.5,
+            frame_size: 1024,
+            smoothing_alpha: 0.0,
+        },
+        ..DspConfig::default()
+    };
+    let mut dsp = ChorusDsp::new(config);
+    let output = dsp.process(&input).unwrap();
+    let expected = load_stereo("frft_unity_bypass.center.npy");
+    let skip = 1024;
+    let compare_len = output.len().min(input.len()).saturating_sub(skip);
+    assert!(compare_len > 0, "not enough output samples to compare after warm-up skip");
+    assert_close(&output[skip..skip + compare_len], &expected[skip..skip + compare_len], 1e-6);
 }
 
 #[test]
