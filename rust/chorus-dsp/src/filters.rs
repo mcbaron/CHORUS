@@ -1,6 +1,7 @@
 use num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::f64::consts::PI;
 
 const CONTRIBUTIONS: [&str; 6] = ["Lc", "Rc", "Lo", "Ro", "Ls", "Rs"];
 
@@ -117,41 +118,22 @@ pub fn eq_frequency_response(
     sample_rate: u32,
     bins_count: usize,
 ) -> Vec<Complex<f64>> {
-    use std::f64::consts::PI;
-
     let fs = sample_rate as f64;
     let n = 2 * (bins_count.saturating_sub(1)).max(1);
-
     let mut h = Vec::with_capacity(bins_count);
 
+    // Compute coefficients based on mode, then evaluate per-bin
     match mode {
-        "highpass" => {
+        "highpass" | "lowpass" => {
             let kw = (PI * frequency_hz / fs).tan();
             let denom = 1.0 + 2.0_f64.sqrt() * kw + kw * kw;
-            let b0 = 1.0 / denom;
-            let b1 = -2.0 * b0;
-            let b2 = b0;
-            let a1 = 2.0 * (kw * kw - 1.0) / denom;
-            let a2 = (1.0 - 2.0_f64.sqrt() * kw + kw * kw) / denom;
-
-            for k in 0..bins_count {
-                let omega = 2.0 * PI * k as f64 / n as f64;
-                let z_inv = Complex::from_polar(1.0, -omega);
-                let z_inv2 = Complex::from_polar(1.0, -2.0 * omega);
-                let num = b0 + b1 * z_inv + b2 * z_inv2;
-                let den = Complex::new(1.0, 0.0) + a1 * z_inv + a2 * z_inv2;
-                h.push(num / den);
-            }
-        }
-        "lowpass" => {
-            let kw = (PI * frequency_hz / fs).tan();
-            let denom = 1.0 + 2.0_f64.sqrt() * kw + kw * kw;
-            let b0 = kw * kw / denom;
-            let b1 = 2.0 * b0;
-            let b2 = b0;
-            let a1 = 2.0 * (kw * kw - 1.0) / denom;
-            let a2 = (1.0 - 2.0_f64.sqrt() * kw + kw * kw) / denom;
-
+            let (b0, b1, b2, a1, a2) = if mode == "highpass" {
+                let b0 = 1.0 / denom;
+                (b0, -2.0 * b0, b0, 2.0 * (kw * kw - 1.0) / denom, (1.0 - 2.0_f64.sqrt() * kw + kw * kw) / denom)
+            } else {
+                let b0 = kw * kw / denom;
+                (b0, 2.0 * b0, b0, 2.0 * (kw * kw - 1.0) / denom, (1.0 - 2.0_f64.sqrt() * kw + kw * kw) / denom)
+            };
             for k in 0..bins_count {
                 let omega = 2.0 * PI * k as f64 / n as f64;
                 let z_inv = Complex::from_polar(1.0, -omega);
@@ -162,29 +144,25 @@ pub fn eq_frequency_response(
             }
         }
         _ => {
-            // peaking: H_total = 1 + H_peak * (A - 1)
+            // peaking: H_total = 1 + H_peak * (A - 1), where A is linear gain
             let w0 = 2.0 * PI * frequency_hz / fs;
-            let bw = w0 / q;
-            let t_bw2 = (bw / 2.0).tan();
+            let t_bw2 = (w0 / q / 2.0).tan();
             let a0 = 1.0 + t_bw2;
             let b0_peak = t_bw2 / a0;
             let b2_peak = -t_bw2 / a0;
             let a1_peak = -2.0 * w0.cos() / a0;
             let a2_peak = (1.0 - t_bw2) / a0;
             let a_lin = 10.0_f64.powf(gain_db / 20.0);
-
             for k in 0..bins_count {
                 let omega = 2.0 * PI * k as f64 / n as f64;
                 let z_inv = Complex::from_polar(1.0, -omega);
                 let z_inv2 = Complex::from_polar(1.0, -2.0 * omega);
                 let num_peak = b0_peak + b2_peak * z_inv2;
                 let den_peak = Complex::new(1.0, 0.0) + a1_peak * z_inv + a2_peak * z_inv2;
-                let h_peak = num_peak / den_peak;
-                h.push(Complex::new(1.0, 0.0) + h_peak * (a_lin - 1.0));
+                h.push(Complex::new(1.0, 0.0) + (num_peak / den_peak) * (a_lin - 1.0));
             }
         }
     }
-
     h
 }
 
@@ -224,6 +202,33 @@ mod tests {
             h[5].norm() < 0.1,
             "Bin 5 |H|={} should be < 0.1 for highpass at 1000 Hz",
             h[5].norm()
+        );
+        // Passband: near-Nyquist bin should be close to 1.0
+        let nyquist_bin = bins_count - 1;
+        assert!(
+            h[nyquist_bin].norm() > 0.99,
+            "Nyquist bin |H|={} should be ≈ 1.0 for highpass",
+            h[nyquist_bin].norm()
+        );
+    }
+
+    #[test]
+    fn eq_lowpass_attenuates_above_cutoff() {
+        let sample_rate = 48_000u32;
+        let bins_count = 1024usize;
+        let h = super::eq_frequency_response("lowpass", 1000.0, 0.707, 0.0, sample_rate, bins_count);
+        // DC should pass through (near 1.0)
+        assert!(
+            (h[0].norm() - 1.0).abs() < 0.01,
+            "DC bin |H|={} should be ≈ 1.0 for lowpass",
+            h[0].norm()
+        );
+        // Near-Nyquist bin should be strongly attenuated
+        let nyquist_bin = bins_count - 1;
+        assert!(
+            h[nyquist_bin].norm() < 0.1,
+            "Nyquist bin |H|={} should be < 0.1 for lowpass at 1000 Hz",
+            h[nyquist_bin].norm()
         );
     }
 
