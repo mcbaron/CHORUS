@@ -45,7 +45,7 @@ impl DspConfig {
 fn build_transform(config: &DspConfig) -> Box<dyn Transform> {
     match &config.transform {
         TransformKind::Stft { frame_size, hop_size, smoothing_alpha } =>
-            Box::new(StreamingStft::new(*frame_size, *hop_size, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
+            Box::new(StreamingStft::new(*frame_size, *hop_size, config.sample_rate, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
         TransformKind::Frft { order, frame_size, smoothing_alpha } =>
             Box::new(StreamingFrft::new(*order, *frame_size, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
         TransformKind::Wavelet { wavelet: _, level, frame_size, smoothing_alpha } =>

@@ -103,6 +103,48 @@ pub fn chain_scalar(chains: &FilterChains, name: &str, soloed: &[String]) -> f64
     scalar
 }
 
+/// Apply a filter chain to a mutable slice of complex spectral bins in-place.
+/// Returns false if the contribution should be zeroed (muted or not soloed).
+pub fn apply_chain_to_bins(
+    bins: &mut [Complex<f64>],
+    chain: &[FilterSpec],
+    sample_rate: u32,
+    soloed: &[String],
+    name: &str,
+) -> bool {
+    if !soloed.is_empty() && !soloed.iter().any(|s| s == name) {
+        return false;
+    }
+
+    for spec in chain {
+        match spec {
+            FilterSpec::Unity | FilterSpec::Solo => {}
+            FilterSpec::Gain { db } => {
+                let scale = 10.0_f64.powf(db / 20.0);
+                for bin in bins.iter_mut() {
+                    *bin *= scale;
+                }
+            }
+            FilterSpec::Mute => {
+                return false;
+            }
+            FilterSpec::Polarity => {
+                for bin in bins.iter_mut() {
+                    *bin = -*bin;
+                }
+            }
+            FilterSpec::Eq { mode, frequency_hz, q, gain_db } => {
+                let gdb = gain_db.unwrap_or(0.0);
+                let h_bins = eq_frequency_response(mode, *frequency_hz, *q, gdb, sample_rate, bins.len());
+                for (bin, h) in bins.iter_mut().zip(h_bins.iter()) {
+                    *bin *= h;
+                }
+            }
+        }
+    }
+    true
+}
+
 /// Compute per-bin complex frequency response H(e^{jω}) for a biquad EQ filter.
 ///
 /// `bins_count` = frame_size / 2 + 1 (number of one-sided RFFT bins).

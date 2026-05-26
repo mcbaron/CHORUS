@@ -11,6 +11,7 @@ use crate::transforms::Transform;
 pub struct StreamingStft {
     frame_size: usize,
     hop_size: usize,
+    sample_rate: u32,
     window: Vec<f64>,
     input_buf: VecDeque<[f64; 2]>,
     output_buf: VecDeque<[f64; 2]>,
@@ -28,6 +29,7 @@ impl StreamingStft {
     pub fn new(
         frame_size: usize,
         hop_size: usize,
+        sample_rate: u32,
         smoothing_alpha: f64,
         epsilon: f64,
         filter_chains: FilterChains,
@@ -49,6 +51,7 @@ impl StreamingStft {
         Self {
             frame_size,
             hop_size,
+            sample_rate,
             window,
             input_buf: VecDeque::new(),
             output_buf: VecDeque::new(),
@@ -132,24 +135,20 @@ impl StreamingStft {
             .map(|(name, _)| name.clone())
             .collect();
 
-        // Apply filter chain scalars
-        let sc_lc = crate::filters::chain_scalar(&self.filter_chains, "Lc", &soloed);
-        let sc_rc = crate::filters::chain_scalar(&self.filter_chains, "Rc", &soloed);
-        let sc_lo = crate::filters::chain_scalar(&self.filter_chains, "Lo", &soloed);
-        let sc_ro = crate::filters::chain_scalar(&self.filter_chains, "Ro", &soloed);
-        let sc_ls = crate::filters::chain_scalar(&self.filter_chains, "Ls", &soloed);
-        let sc_rs = crate::filters::chain_scalar(&self.filter_chains, "Rs", &soloed);
-
-        let apply_scalar = |bins: &[Complex<f64>], s: f64| -> Vec<Complex<f64>> {
-            bins.iter().map(|c| c * s).collect()
+        let sample_rate = self.sample_rate;
+        let apply_chain = |mut bins: Vec<Complex<f64>>, name: &str| -> Vec<Complex<f64>> {
+            let default_chain = vec![FilterSpec::Unity];
+            let chain = self.filter_chains.get(name).unwrap_or(&default_chain);
+            let keep = crate::filters::apply_chain_to_bins(&mut bins, chain, sample_rate, &soloed, name);
+            if keep { bins } else { vec![Complex::new(0.0, 0.0); bins.len()] }
         };
 
-        let lc_scaled = apply_scalar(&lc_bins, sc_lc);
-        let rc_scaled = apply_scalar(&rc_bins, sc_rc);
-        let lo_scaled = apply_scalar(&lo_bins, sc_lo);
-        let ro_scaled = apply_scalar(&ro_bins, sc_ro);
-        let ls_scaled = apply_scalar(&ls_bins, sc_ls);
-        let rs_scaled = apply_scalar(&rs_bins, sc_rs);
+        let lc_scaled = apply_chain(lc_bins, "Lc");
+        let rc_scaled = apply_chain(rc_bins, "Rc");
+        let lo_scaled = apply_chain(lo_bins, "Lo");
+        let ro_scaled = apply_chain(ro_bins, "Ro");
+        let ls_scaled = apply_chain(ls_bins, "Ls");
+        let rs_scaled = apply_chain(rs_bins, "Rs");
 
         // IFFT each contribution separately, apply synthesis window, overlap-add into output frame.
         // Lc, Lo, Ls → left channel (index 0); Rc, Ro, Rs → right channel (index 1).
@@ -238,7 +237,7 @@ mod tests {
     const HOP_SIZE: usize = 512;
 
     fn make_stft() -> StreamingStft {
-        StreamingStft::new(FRAME_SIZE, HOP_SIZE, 0.0, 1e-12, unity_chains())
+        StreamingStft::new(FRAME_SIZE, HOP_SIZE, 48_000u32, 0.0, 1e-12, unity_chains())
     }
 
     fn generate_sine(num_samples: usize, freq_hz: f64, sample_rate: f64) -> Vec<[f64; 2]> {
@@ -380,6 +379,52 @@ mod tests {
                 skip + i, out_sample[1], in_sample[1]
             );
         }
+    }
+
+    #[test]
+    fn eq_highpass_reduces_low_frequency_energy() {
+        use crate::filters::{FilterSpec, FilterChains};
+
+        let sample_rate = 48_000.0;
+        let num_samples: usize = 4096;
+        let signal: Vec<[f64; 2]> = (0..num_samples)
+            .map(|i| {
+                let t = i as f64 / sample_rate;
+                let v = (2.0 * std::f64::consts::PI * 440.0 * t).sin();
+                [v, v]
+            })
+            .collect();
+
+        let mut chains: FilterChains = crate::filters::unity_chains();
+        chains.insert("Lo".to_string(), vec![
+            FilterSpec::Eq { mode: "highpass".to_string(), frequency_hz: 1000.0, q: 0.707, gain_db: Some(0.0) }
+        ]);
+        chains.insert("Lc".to_string(), vec![FilterSpec::Mute]);
+        chains.insert("Ls".to_string(), vec![FilterSpec::Mute]);
+        chains.insert("Rc".to_string(), vec![FilterSpec::Mute]);
+        chains.insert("Rs".to_string(), vec![FilterSpec::Mute]);
+        chains.insert("Ro".to_string(), vec![FilterSpec::Mute]);
+
+        let mut stft = StreamingStft::new(FRAME_SIZE, HOP_SIZE, 48_000u32, 0.0, 1e-12, chains);
+
+        let mut all_output: Vec<[f64; 2]> = Vec::new();
+        for chunk in signal.chunks(HOP_SIZE) {
+            all_output.extend(stft.process_block(chunk));
+        }
+        let flush = vec![[0.0_f64; 2]; FRAME_SIZE * 2];
+        all_output.extend(stft.process_block(&flush));
+
+        let skip = HOP_SIZE;
+        let compare_len = num_samples.saturating_sub(2 * HOP_SIZE);
+        let input_energy: f64 = signal[skip..skip + compare_len].iter().map(|s| s[0] * s[0]).sum();
+        let output_energy: f64 = all_output[skip..skip + compare_len].iter().map(|s| s[0] * s[0]).sum();
+
+        assert!(all_output.iter().all(|s| s[0].is_finite() && s[1].is_finite()),
+            "Output contains non-finite values");
+        assert!(
+            output_energy < input_energy * 0.1,
+            "Expected >10 dB reduction: input_energy={input_energy:.4}, output_energy={output_energy:.4}"
+        );
     }
 
     #[test]
