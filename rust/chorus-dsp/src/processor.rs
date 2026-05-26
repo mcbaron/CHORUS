@@ -49,7 +49,7 @@ fn build_transform(config: &DspConfig) -> Box<dyn Transform> {
         TransformKind::Frft { order, frame_size, smoothing_alpha } =>
             Box::new(StreamingFrft::new(*order, *frame_size, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
         TransformKind::Wavelet { wavelet: _, level, frame_size, smoothing_alpha } =>
-            Box::new(StreamingWavelet::new(*level, *frame_size, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
+            Box::new(StreamingWavelet::new(*level, *frame_size, config.sample_rate, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
     }
 }
 

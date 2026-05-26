@@ -96,7 +96,7 @@ pub fn chain_scalar(chains: &FilterChains, name: &str, soloed: &[String]) -> f64
                 scalar = -scalar;
             }
             FilterSpec::Eq { .. } => {
-                unimplemented!("EQ not yet supported in chain_scalar");
+                panic!("chain_scalar does not support EQ filters; use apply_chain_to_bins or apply_chain_to_real_signal");
             }
         }
     }
@@ -206,6 +206,81 @@ pub fn eq_frequency_response(
         }
     }
     h
+}
+
+/// Apply a biquad EQ filter to a real-valued signal using rfft → H(ω) → irfft.
+pub fn apply_eq_to_real_signal(
+    signal: &[f64],
+    mode: &str,
+    frequency_hz: f64,
+    q: f64,
+    gain_db: f64,
+    sample_rate: u32,
+) -> Vec<f64> {
+    use rustfft::FftPlanner;
+
+    let n = signal.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let num_bins = n / 2 + 1;
+
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(n);
+    let mut buf: Vec<Complex<f64>> = signal.iter().map(|&x| Complex::new(x, 0.0)).collect();
+    fft.process(&mut buf);
+
+    let mut spectrum: Vec<Complex<f64>> = buf[..num_bins].to_vec();
+    let h = eq_frequency_response(mode, frequency_hz, q, gain_db, sample_rate, num_bins);
+    for (bin, hi) in spectrum.iter_mut().zip(h.iter()) {
+        *bin *= hi;
+    }
+
+    let mut ifft_buf: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); n];
+    ifft_buf[..num_bins].copy_from_slice(&spectrum);
+    for k in 1..num_bins - 1 {
+        ifft_buf[n - k] = spectrum[k].conj();
+    }
+    let ifft = planner.plan_fft_inverse(n);
+    ifft.process(&mut ifft_buf);
+
+    ifft_buf.iter().map(|c| c.re / n as f64).collect()
+}
+
+/// Apply a filter chain to a real-valued signal vector.
+/// Returns a zero vector if muted or not soloed.
+pub fn apply_chain_to_real_signal(
+    signal: &[f64],
+    chain: &[FilterSpec],
+    sample_rate: u32,
+    soloed: &[String],
+    name: &str,
+) -> Vec<f64> {
+    if !soloed.is_empty() && !soloed.iter().any(|s| s == name) {
+        return vec![0.0; signal.len()];
+    }
+
+    let mut result = signal.to_vec();
+    for spec in chain {
+        match spec {
+            FilterSpec::Unity | FilterSpec::Solo => {}
+            FilterSpec::Gain { db } => {
+                let scale = 10.0_f64.powf(db / 20.0);
+                for s in result.iter_mut() { *s *= scale; }
+            }
+            FilterSpec::Mute => {
+                return vec![0.0; signal.len()];
+            }
+            FilterSpec::Polarity => {
+                for s in result.iter_mut() { *s = -*s; }
+            }
+            FilterSpec::Eq { mode, frequency_hz, q, gain_db } => {
+                let gdb = gain_db.unwrap_or(0.0);
+                result = apply_eq_to_real_signal(&result, mode, *frequency_hz, *q, gdb, sample_rate);
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]

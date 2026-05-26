@@ -201,6 +201,7 @@ fn boundary_contamination(level: usize) -> usize {
 pub struct StreamingWavelet {
     level: usize,
     frame_size: usize,
+    sample_rate: u32,
     overlap: usize,           // = 2 * boundary_contamination
     input_buf: VecDeque<[f64; 2]>,
     output_buf: VecDeque<[f64; 2]>,
@@ -215,6 +216,7 @@ impl StreamingWavelet {
     pub fn new(
         level: usize,
         frame_size: usize,
+        sample_rate: u32,
         smoothing_alpha: f64,
         epsilon: f64,
         filter_chains: FilterChains,
@@ -234,6 +236,7 @@ impl StreamingWavelet {
         Self {
             level,
             frame_size,
+            sample_rate,
             overlap,
             input_buf,
             output_buf: VecDeque::new(),
@@ -289,28 +292,26 @@ impl StreamingWavelet {
         let ro_flat: Vec<f64> = right_flat.iter().zip(rc_flat.iter()).zip(rs_flat.iter())
             .map(|((r, rc), rs)| r - rc - rs).collect();
 
-        // Filter chain scalars
+        // Apply filter chains to each contribution's real coefficient array
         let soloed: Vec<String> = self.filter_chains
             .iter()
             .filter(|(_, chain)| chain.iter().any(|spec| matches!(spec, FilterSpec::Solo)))
             .map(|(name, _)| name.clone())
             .collect();
 
-        let sc_lc = crate::filters::chain_scalar(&self.filter_chains, "Lc", &soloed);
-        let sc_rc = crate::filters::chain_scalar(&self.filter_chains, "Rc", &soloed);
-        let sc_lo = crate::filters::chain_scalar(&self.filter_chains, "Lo", &soloed);
-        let sc_ro = crate::filters::chain_scalar(&self.filter_chains, "Ro", &soloed);
-        let sc_ls = crate::filters::chain_scalar(&self.filter_chains, "Ls", &soloed);
-        let sc_rs = crate::filters::chain_scalar(&self.filter_chains, "Rs", &soloed);
+        let default_chain = vec![FilterSpec::Unity];
+        let sample_rate = self.sample_rate;
 
-        let apply_scalar = |v: &[f64], s: f64| -> Vec<f64> { v.iter().map(|x| x * s).collect() };
+        let get_chain = |name: &str| -> &[FilterSpec] {
+            self.filter_chains.get(name).map(|v| v.as_slice()).unwrap_or(default_chain.as_slice())
+        };
 
-        let lc_scaled = apply_scalar(&lc_flat, sc_lc);
-        let rc_scaled = apply_scalar(&rc_flat, sc_rc);
-        let lo_scaled = apply_scalar(&lo_flat, sc_lo);
-        let ro_scaled = apply_scalar(&ro_flat, sc_ro);
-        let ls_scaled = apply_scalar(&ls_flat, sc_ls);
-        let rs_scaled = apply_scalar(&rs_flat, sc_rs);
+        let lc_scaled = crate::filters::apply_chain_to_real_signal(&lc_flat, get_chain("Lc"), sample_rate, &soloed, "Lc");
+        let rc_scaled = crate::filters::apply_chain_to_real_signal(&rc_flat, get_chain("Rc"), sample_rate, &soloed, "Rc");
+        let lo_scaled = crate::filters::apply_chain_to_real_signal(&lo_flat, get_chain("Lo"), sample_rate, &soloed, "Lo");
+        let ro_scaled = crate::filters::apply_chain_to_real_signal(&ro_flat, get_chain("Ro"), sample_rate, &soloed, "Ro");
+        let ls_scaled = crate::filters::apply_chain_to_real_signal(&ls_flat, get_chain("Ls"), sample_rate, &soloed, "Ls");
+        let rs_scaled = crate::filters::apply_chain_to_real_signal(&rs_flat, get_chain("Rs"), sample_rate, &soloed, "Rs");
 
         // Combine contributions per channel
         let left_out_flat: Vec<f64> = lc_scaled.iter().zip(lo_scaled.iter()).zip(ls_scaled.iter())
@@ -390,8 +391,43 @@ mod tests {
     const LEVEL: usize = 3;
     const FRAME_SIZE: usize = 512;
 
+    #[test]
+    fn eq_chain_scalar_does_not_panic_for_wavelet_path() {
+        use crate::filters::FilterSpec;
+
+        let mut chains = crate::filters::unity_chains();
+        chains.insert("Lo".to_string(), vec![
+            FilterSpec::Eq { mode: "highpass".to_string(), frequency_hz: 1000.0, q: 0.707, gain_db: Some(0.0) }
+        ]);
+        chains.insert("Lc".to_string(), vec![FilterSpec::Mute]);
+        chains.insert("Ls".to_string(), vec![FilterSpec::Mute]);
+
+        let sample_rate_f64 = 48_000.0;
+        let num_samples = 2048;
+        let signal: Vec<[f64; 2]> = (0..num_samples)
+            .map(|i| {
+                let t = i as f64 / sample_rate_f64;
+                let v = (2.0 * std::f64::consts::PI * 440.0 * t).sin();
+                [v, v]
+            })
+            .collect();
+
+        let mut wav = StreamingWavelet::new(LEVEL, FRAME_SIZE, 48_000, 0.0, 1e-12, chains);
+        let mut all_output: Vec<[f64; 2]> = Vec::new();
+        for chunk in signal.chunks(FRAME_SIZE) {
+            all_output.extend(wav.process_block(chunk));
+        }
+        let flush = vec![[0.0_f64; 2]; FRAME_SIZE * 4];
+        all_output.extend(wav.process_block(&flush));
+
+        assert!(
+            all_output.iter().all(|s| s[0].is_finite() && s[1].is_finite()),
+            "Wavelet EQ output contains non-finite values"
+        );
+    }
+
     fn make_wavelet() -> StreamingWavelet {
-        StreamingWavelet::new(LEVEL, FRAME_SIZE, 0.0, 1e-12, unity_chains())
+        StreamingWavelet::new(LEVEL, FRAME_SIZE, 48_000u32, 0.0, 1e-12, unity_chains())
     }
 
     fn generate_sine(num_samples: usize, freq_hz: f64, sample_rate: f64) -> Vec<[f64; 2]> {
@@ -588,7 +624,7 @@ mod tests {
         let bc = (8 - 1) * ((1 << LEVEL) - 1); // = 49
         let _overlap = 2 * bc;
 
-        let mut wav = StreamingWavelet::new(LEVEL, FRAME, 0.0, 1e-9, unity_chains());
+        let mut wav = StreamingWavelet::new(LEVEL, FRAME, 48_000u32, 0.0, 1e-9, unity_chains());
 
         // The input_buf is pre-loaded with `overlap` zeros. After feeding FRAME samples the
         // buf has `overlap + FRAME = block_size` samples, which triggers the first emission.
