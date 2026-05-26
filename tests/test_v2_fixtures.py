@@ -31,4 +31,5 @@ def test_fixture_manifest_contains_required_cases() -> None:
         "known_eq_preset",
         "silence",
         "near_silence",
+        "frft_unity_bypass",
     }

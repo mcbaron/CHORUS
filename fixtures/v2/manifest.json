@@ -9,6 +9,15 @@
         "surround": "center_dominant.surround.npy"
       }
     },
+    "frft_unity_bypass": {
+      "filters": {},
+      "outputs": {
+        "center": "frft_unity_bypass.center.npy",
+        "input": "frft_unity_bypass.input.npy",
+        "only": "frft_unity_bypass.only.npy",
+        "surround": "frft_unity_bypass.surround.npy"
+      }
+    },
     "hard_panned_left": {
       "filters": {},
       "outputs": {
