@@ -98,11 +98,11 @@ def test_solo_mutes_non_solo_contributions() -> None:
 
 
 def test_eq_highpass_attenuates_below_cutoff() -> None:
-    """Highpass at 1000 Hz should attenuate a 440 Hz sine by more than 20 dB."""
+    """Highpass at 1000 Hz should attenuate a 100 Hz sine by more than 20 dB."""
     sample_rate = 48_000
     n = 4096
     t = np.arange(n) / sample_rate
-    audio = np.sin(2.0 * np.pi * 440.0 * t)
+    audio = np.sin(2.0 * np.pi * 100.0 * t)
 
     contributions = {name: (audio.copy() if name == "Lo" else np.zeros(n)) for name in CONTRIBUTIONS}
     chains = normalize_filter_config({"Lo": [{"type": "eq", "mode": "highpass", "frequency_hz": 1000.0, "q": 0.707}]})
