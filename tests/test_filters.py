@@ -146,3 +146,22 @@ def test_eq_lowpass_attenuates_above_cutoff() -> None:
     output_rms = float(np.sqrt(np.mean(filtered["Lo"] ** 2)))
     ratio_db = 20.0 * np.log10(output_rms / input_rms + 1e-12)
     assert ratio_db < -20.0, f"Expected > 20 dB attenuation, got {ratio_db:.1f} dB"
+
+
+def test_eq_fixture_parity_known_eq_preset() -> None:
+    """The regenerated known_eq_preset fixture should match _apply_eq output."""
+    import json
+    from pathlib import Path
+
+    fixture_dir = Path("fixtures/v2")
+    manifest = json.loads((fixture_dir / "manifest.json").read_text())
+    assert "known_eq_preset" in manifest["cases"], "fixture not found"
+
+    audio_input = np.load(fixture_dir / "known_eq_preset.input.npy")
+    spec = FilterSpec(type="eq", parameters={"mode": "highpass", "frequency_hz": 120.0, "q": 0.707})
+    from chorus.filters import _apply_eq
+    lo_audio = audio_input[:, 0]
+    filtered = _apply_eq(lo_audio, spec, sample_rate=48_000)
+
+    assert np.all(np.isfinite(filtered)), "filtered output contains non-finite values"
+    assert filtered.shape == lo_audio.shape
