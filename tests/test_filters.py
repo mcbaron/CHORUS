@@ -149,19 +149,38 @@ def test_eq_lowpass_attenuates_above_cutoff() -> None:
 
 
 def test_eq_fixture_parity_known_eq_preset() -> None:
-    """The regenerated known_eq_preset fixture should match _apply_eq output."""
+    """The regenerated known_eq_preset fixture should match the full pipeline output."""
     import json
     from pathlib import Path
+
+    from chorus.core import ChorusConfig, ChorusProcessor
 
     fixture_dir = Path("fixtures/v2")
     manifest = json.loads((fixture_dir / "manifest.json").read_text())
     assert "known_eq_preset" in manifest["cases"], "fixture not found"
 
     audio_input = np.load(fixture_dir / "known_eq_preset.input.npy")
-    spec = FilterSpec(type="eq", parameters={"mode": "highpass", "frequency_hz": 120.0, "q": 0.707})
-    from chorus.filters import _apply_eq
-    lo_audio = audio_input[:, 0]
-    filtered = _apply_eq(lo_audio, spec, sample_rate=48_000)
 
-    assert np.all(np.isfinite(filtered)), "filtered output contains non-finite values"
-    assert filtered.shape == lo_audio.shape
+    # Replicate exactly what generate_v2_fixtures.py does for the known_eq_preset case.
+    filters = {
+        "Lc": [{"type": "gain", "db": -6.0}],
+        "Lo": [{"type": "eq", "mode": "highpass", "frequency_hz": 120.0, "q": 0.707}],
+        "Rs": [{"type": "polarity"}],
+    }
+    config = ChorusConfig(
+        sample_rate=48_000,
+        smoothing_alpha=0.0,
+        filter_chains=normalize_filter_config(filters),
+    )
+    processor = ChorusProcessor(config)
+    result = processor.process(audio_input)
+
+    expected_center = np.load(fixture_dir / "known_eq_preset.center.npy")
+
+    # Python → Python should be bit-identical; use a tight tolerance.
+    np.testing.assert_allclose(
+        result.center,
+        expected_center,
+        atol=1e-10,
+        err_msg="known_eq_preset center output does not match fixture",
+    )

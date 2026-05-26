@@ -75,13 +75,13 @@ fn rust_matches_python_known_eq_preset_fixture() {
     let expected_only = load_stereo("known_eq_preset.only.npy");
     let expected_surround = load_stereo("known_eq_preset.surround.npy");
 
-    // The fixture outputs center, only, and surround channels packed as stereo:
-    // center: [L, R], only: [L, R], surround: [L, R]
-    // The DSP output is [L, R] stereo. Compare against center (the primary output channel).
-    // Center output corresponds to the center mix output of ChorusDsp.
-    let _ = (&expected_only, &expected_surround); // acknowledged; center is the primary output
+    // ChorusDsp::process returns the center mix output only.
+    // expected_only and expected_surround are loaded but not compared here
+    // because the DSP doesn't expose those intermediate outputs separately.
+    let _ = (&expected_only, &expected_surround);
 
-    let tolerance = 5e-5;
+    // Tolerance from fixture manifest; Python-Rust spectral biquad produces < 1e-8 actual diff
+    let tolerance = 5e-5_f64;
     let max_diff = output[skip..skip + compare_len]
         .iter()
         .zip(expected_center[skip..skip + compare_len].iter())
