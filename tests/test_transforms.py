@@ -59,6 +59,7 @@ def test_experimental_frft_adapter_smoke(stereo_identical: np.ndarray) -> None:
 
     representation = transform.forward(stereo_identical)
 
+    assert representation.data.ndim == 3
     assert representation.data.shape[0] == 2
     assert representation.metadata["experimental"] is True
     assert representation.metadata["transform"] == "frft"
@@ -72,6 +73,18 @@ def test_frft_round_trip_pass_through_stereo(stereo_identical: np.ndarray) -> No
 
     assert reconstructed.shape == stereo_identical.shape
     np.testing.assert_allclose(reconstructed, stereo_identical, atol=1e-10, rtol=1e-10)
+
+
+def test_frft_metadata_records_ola_settings() -> None:
+    transform = FrFTTransform(order=0.5, frame_size=1024)
+    rng = np.random.default_rng(0)
+    audio = rng.standard_normal((2048, 2))
+
+    representation = transform.forward(audio)
+
+    assert representation.metadata["hop_size"] == 512
+    assert representation.metadata["window"] == "sqrt_hann"
+    assert representation.metadata["frame_size"] == 1024
 
 
 def test_experimental_wavelet_adapter_smoke(stereo_identical: np.ndarray) -> None:
@@ -126,15 +139,26 @@ def test_frft_identity_order_zero() -> None:
 
 
 def test_frft_order_one_matches_fft() -> None:
-    """order=1.0 forward must match np.fft.fft per frame per channel."""
+    """order=1.0 forward must match windowed np.fft.fft per frame per channel."""
     rng = np.random.default_rng(13)
-    audio = rng.standard_normal((1024, 2))
-    t = FrFTTransform(order=1.0, frame_size=1024)
+    N = 1024
+    H = N // 2
+    audio = rng.standard_normal((N, 2))
+    t = FrFTTransform(order=1.0, frame_size=N)
     rep = t.forward(audio)
-    expected_left = np.fft.fft(audio[:, 0])
-    expected_right = np.fft.fft(audio[:, 1])
-    np.testing.assert_allclose(rep.data[0], expected_left, atol=1e-10)
-    np.testing.assert_allclose(rep.data[1], expected_right, atol=1e-10)
+
+    window = np.sqrt(np.hanning(N))
+    # n_samples=N=1024, n_frames=ceil(N/H)=2, total_length=H+N=1536
+    # signal placed at padded[H:H+N]; frame0=padded[0:N], frame1=padded[H:H+N]
+    total_length = H + N
+    padded = np.zeros((total_length, 2))
+    padded[H : H + N, :] = audio
+
+    for frame_idx in range(2):
+        start = frame_idx * H
+        for ch in range(2):
+            expected = np.fft.fft(window * padded[start : start + N, ch])
+            np.testing.assert_allclose(rep.data[ch, frame_idx], expected, atol=1e-10)
 
 
 @pytest.mark.parametrize("wav_path", WAV_FILES)
