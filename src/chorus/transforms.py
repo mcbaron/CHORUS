@@ -138,27 +138,31 @@ def _ifrft_1d(y: np.ndarray, order: float) -> np.ndarray:
 
 
 class FrFTTransform:
-    def __init__(self, order: float = 0.5, frame_size: int = 1024) -> None:
+    def __init__(self, order: float = 0.5, frame_size: int = 1024, hop_size: int | None = None) -> None:
         self.order = order
         self.frame_size = frame_size
+        self.hop_size = hop_size if hop_size is not None else frame_size // 2
+        if not (0 < self.hop_size <= frame_size // 2):
+            raise ValueError(f"hop_size must be between 1 and frame_size // 2 ({frame_size // 2}), got {self.hop_size}")
 
     def forward(self, stereo: np.ndarray) -> TransformRepresentation:
         stereo = _validate_stereo(stereo)
         n_samples = stereo.shape[0]
-        n_padded = math.ceil(n_samples / self.frame_size) * self.frame_size
-        n_pad = n_padded - n_samples
+        N = self.frame_size
+        H = self.hop_size
+        window = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * np.arange(N) / N))
 
-        stereo_padded = np.zeros((n_padded, 2), dtype=np.float64)
-        stereo_padded[:n_samples, :] = stereo
+        n_frames = math.ceil(n_samples / H) + 1
+        total_length = (n_frames - 1) * H + N
 
-        n_frames = n_padded // self.frame_size
-        out = np.empty((2, n_padded), dtype=complex)
+        padded = np.zeros((total_length, 2), dtype=np.float64)
+        padded[H : H + n_samples, :] = stereo
 
+        out = np.empty((2, n_frames, N), dtype=complex)
         for ch in range(2):
             for i in range(n_frames):
-                start = i * self.frame_size
-                end = start + self.frame_size
-                out[ch, start:end] = _frft_1d(stereo_padded[start:end, ch], self.order)
+                start = i * H
+                out[ch, i] = _frft_1d(window * padded[start : start + N, ch], self.order)
 
         return TransformRepresentation(
             data=out,
@@ -166,41 +170,45 @@ class FrFTTransform:
             metadata={
                 "transform": "frft",
                 "order": self.order,
-                "frame_size": self.frame_size,
-                "n_pad": n_pad,
+                "frame_size": N,
+                "hop_size": H,
+                "window": "sqrt_hann",
                 "experimental": True,
             },
         )
 
     def inverse(self, representation: TransformRepresentation) -> np.ndarray:
-        n_padded = representation.data.shape[1]
-        assert n_padded % self.frame_size == 0, (
-            f"data length {n_padded} is not a multiple of frame_size {self.frame_size}"
-        )
         n_samples = representation.original_shape[0]
+        N = self.frame_size
+        H = self.hop_size
+        window = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * np.arange(N) / N))
 
-        out = np.empty((n_padded, 2), dtype=np.float64)
+        n_frames = representation.data.shape[1]
+        total_length = (n_frames - 1) * H + N
+
+        buf = np.zeros((total_length, 2), dtype=np.float64)
         for ch in range(2):
-            for i in range(n_padded // self.frame_size):
-                start = i * self.frame_size
-                end = start + self.frame_size
-                out[start:end, ch] = _ifrft_1d(representation.data[ch, start:end], self.order).real
+            for i in range(n_frames):
+                start = i * H
+                frame = _ifrft_1d(representation.data[ch, i], self.order).real
+                buf[start : start + N, ch] += window * frame
 
-        return out[:n_samples, :]
+        return buf[H : H + n_samples, :]
 
     def inverse_components(
         self, components: np.ndarray, original_shape: tuple[int, int]
     ) -> np.ndarray:
-        n_padded = math.ceil(original_shape[0] / self.frame_size) * self.frame_size
-        n_pad = n_padded - original_shape[0]
+        N = self.frame_size
+        H = self.hop_size
         representation = TransformRepresentation(
             data=components,
             original_shape=original_shape,
             metadata={
                 "transform": "frft",
                 "order": self.order,
-                "frame_size": self.frame_size,
-                "n_pad": n_pad,
+                "frame_size": N,
+                "hop_size": H,
+                "window": "sqrt_hann",
                 "experimental": True,
             },
         )
