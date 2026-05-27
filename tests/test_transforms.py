@@ -56,6 +56,11 @@ def test_stft_rejects_too_short_stereo_input() -> None:
         transform.forward(too_short)
 
 
+def test_frft_rejects_invalid_hop_size() -> None:
+    with pytest.raises(ValueError, match="hop_size"):
+        FrFTTransform(frame_size=1024, hop_size=513)
+
+
 def test_experimental_frft_adapter_smoke(stereo_identical: np.ndarray) -> None:
     transform = FrFTTransform(order=0.75)
 
@@ -63,7 +68,7 @@ def test_experimental_frft_adapter_smoke(stereo_identical: np.ndarray) -> None:
 
     assert representation.data.ndim == 3
     assert representation.data.shape[0] == 2
-    assert representation.data.shape[1] == math.ceil(stereo_identical.shape[0] / (1024 // 2))
+    assert representation.data.shape[1] == math.ceil(stereo_identical.shape[0] / (1024 // 2)) + 1
     assert representation.data.shape[2] == 1024
     assert representation.metadata["experimental"] is True
     assert representation.metadata["transform"] == "frft"
@@ -153,9 +158,9 @@ def test_frft_order_one_matches_fft() -> None:
 
     # Periodic Hann (not np.hanning which is symmetric) satisfies COLA at 50% overlap exactly.
     window = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * np.arange(N) / N))
-    # n_samples=N=1024, n_frames=ceil(N/H)=2, total_length=H+N=1536
-    # signal placed at padded[H:H+N]; frame0=padded[0:N], frame1=padded[H:H+N]
-    total_length = H + N
+    # n_samples=N=1024, n_frames=ceil(N/H)+1=3, total_length=(n_frames-1)*H+N=2048
+    # signal placed at padded[H:H+N]; only frames 0 and 1 are verified here
+    total_length = H + N  # test reference padded only needs to cover frames 0 and 1
     padded = np.zeros((total_length, 2))
     padded[H : H + N, :] = audio
 
