@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 import soundfile as sf
@@ -61,6 +63,8 @@ def test_experimental_frft_adapter_smoke(stereo_identical: np.ndarray) -> None:
 
     assert representation.data.ndim == 3
     assert representation.data.shape[0] == 2
+    assert representation.data.shape[1] == math.ceil(stereo_identical.shape[0] / (1024 // 2))
+    assert representation.data.shape[2] == 1024
     assert representation.metadata["experimental"] is True
     assert representation.metadata["transform"] == "frft"
 
@@ -147,7 +151,8 @@ def test_frft_order_one_matches_fft() -> None:
     t = FrFTTransform(order=1.0, frame_size=N)
     rep = t.forward(audio)
 
-    window = np.sqrt(np.hanning(N))
+    # Periodic Hann (not np.hanning which is symmetric) satisfies COLA at 50% overlap exactly.
+    window = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * np.arange(N) / N))
     # n_samples=N=1024, n_frames=ceil(N/H)=2, total_length=H+N=1536
     # signal placed at padded[H:H+N]; frame0=padded[0:N], frame1=padded[H:H+N]
     total_length = H + N
