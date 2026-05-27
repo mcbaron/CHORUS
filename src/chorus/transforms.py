@@ -217,7 +217,7 @@ class WaveletTransform:
         coeff_arrays = []
         coeff_slices = []
         for channel in stereo.T:
-            coeffs = pywt.wavedec(channel, self.wavelet, level=self.level, mode="periodization")
+            coeffs = pywt.wavedec(channel, self.wavelet, level=self.level, mode="reflect")
             coeff_array, slices = pywt.coeffs_to_array(coeffs)
             coeff_arrays.append(coeff_array)
             coeff_slices.append(slices)
@@ -238,7 +238,7 @@ class WaveletTransform:
         channels = []
         for channel_data, slices in zip(representation.data, coeff_slices, strict=True):
             coeffs = pywt.array_to_coeffs(channel_data, slices, output_format="wavedec")
-            reconstructed = pywt.waverec(coeffs, self.wavelet, mode="periodization")
+            reconstructed = pywt.waverec(coeffs, self.wavelet, mode="reflect")
             channels.append(reconstructed[: representation.original_shape[0]])
         return np.column_stack(channels)
 

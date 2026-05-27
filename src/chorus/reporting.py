@@ -141,7 +141,11 @@ def build_v1_report(
             "directory": str(output_dir),
             "stems": {name: str(path) for name, path in stem_paths.items()},
         },
-        "settings": result.metadata,
+        "settings": {
+            k: ({ik: iv for ik, iv in v.items() if ik != "coeff_slices"} if k == "transform" and isinstance(v, dict) else v)
+            for k, v in result.metadata.items()
+            if k != "coeff_slices"
+        },
         "filters": filter_report,
         "levels": {
             "center": level_metrics(result.center),
@@ -191,7 +195,8 @@ def write_markdown_report(output_dir: str | Path, report: dict[str, object]) -> 
         lines.append(f"- {name}: `{stem_path}`")
     lines.extend(["", "## Spectrograms"])
     for name, image_path in spectrograms.items():
-        lines.append(f"- {name}: ![{name}]({Path(image_path).as_posix()})")
+        rel = Path(image_path).relative_to(Path(output_dir))
+        lines.append(f"- {name}: ![{name}]({rel.as_posix()})")
     lines.extend(
         [
             "",
