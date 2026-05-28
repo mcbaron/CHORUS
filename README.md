@@ -140,6 +140,16 @@ cargo test --manifest-path rust/chorus-dsp/Cargo.toml
 cargo test --manifest-path rust/chorus-ffi/Cargo.toml
 ```
 
+### Plugin (requires JUCE)
+
+```bash
+cmake -S plugin -B plugin/build -DJUCE_DIR=/path/to/JUCE
+cmake --build plugin/build --config Release
+ctest --test-dir plugin/build --output-on-failure
+```
+
+JUCE is not bundled. Clone it from [github.com/juce-framework/JUCE](https://github.com/juce-framework/JUCE) and pass the checkout path as `JUCE_DIR`. Cargo and rustc must be on PATH (or discoverable under `~/.cargo/bin` or Homebrew) — CMake locates them automatically via `find_program`.
+
 ### Regenerate Python v2 fixtures
 
 ```bash
@@ -161,4 +171,4 @@ poetry run python scripts/generate_v2_fixtures.py
 - **v0** — Python offline splitter with STFT ✓
 - **v1** — FrFT/Wavelet adapters, spectrogram reports ✓
 - **v2** — Per-contribution filter chains ✓
-- **v3** — Rust DSP core (streaming, real-time) ✓ / JUCE plugin wrapper (pending)
+- **v3** — Rust DSP core (streaming, real-time) ✓ / JUCE VST3 plugin wrapper ✓
