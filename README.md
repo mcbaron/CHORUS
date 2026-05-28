@@ -165,13 +165,6 @@ poetry run python scripts/generate_v2_fixtures.py
 
 ---
 
-## Known gaps
-
-- `rust_matches_python_frft_fixture` — `#[ignore]`d: Python FrFT uses a phase-shifted FFT approximation; Rust implements true Ozaktas-Kutay. Parity requires updating Python to match.
-- `rust_matches_python_known_eq_preset_fixture` — `#[ignore]`d: EQ biquad implementation pending for the non-STFT (wavelet, FrFT) paths.
-- JUCE plugin wrapper — not yet built; planned for v3.
-
----
 
 ## Roadmap
 
