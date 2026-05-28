@@ -150,6 +150,13 @@ ctest --test-dir plugin/build --output-on-failure
 
 JUCE is not bundled. Clone it from [github.com/juce-framework/JUCE](https://github.com/juce-framework/JUCE) and pass the checkout path as `JUCE_DIR`. Cargo and rustc must be on PATH (or discoverable under `~/.cargo/bin` or Homebrew) — CMake locates them automatically via `find_program`.
 
+Validate the built VST3 with [pluginval](https://github.com/Tracktion/pluginval):
+
+```bash
+pluginval --validate-in-process --strictness-level 5 \
+  plugin/build/CHORUSPlugin_artefacts/VST3/CHORUS.vst3
+```
+
 ### Regenerate Python v2 fixtures
 
 ```bash
