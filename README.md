@@ -2,64 +2,95 @@
 
 CHORUS Harmonizes Outputs from Reconstructed Upmixed Signals.
 
-v0 is an offline Python reference demo for stereo contribution splitting. It reads a stereo WAV `(L, R)` and writes:
+Reads a stereo WAV `(L, R)` and writes three stereo stems:
 
-- `center.wav`: `[Lc, Rc]`
-- `only.wav`: `[Lo, Ro]`
-- `surround.wav`: `[Ls, Rs]`
-- `report.json`: settings, levels, and reconstruction checks
+- `center.wav` — `[Lc, Rc]`
+- `only.wav` — `[Lo, Ro]`
+- `surround.wav` — `[Ls, Rs]`
+- `report.json` — settings, levels, and reconstruction checks
+- `report.md` — human-readable summary
+- `spectrograms/` — per-contribution spectrograms
+
+Available as a Python CLI (reference) and a Rust binary (streaming/real-time).
+
+---
 
 ## Install
+
+### Python
 
 ```bash
 poetry install
 ```
 
-## Run
+### Rust
 
 ```bash
-poetry run chorus split input.wav --out-dir out --transform stft
+cargo build --release --manifest-path rust/chorus-dsp/Cargo.toml
 ```
 
-STFT is the reference path. FrFT and wavelet adapters are experimental in v0 and are not supported for full splitting until their inverse/reconstruction behavior is promoted to reference quality.
+The binary is at `rust/chorus-dsp/target/release/chorus_split`.
 
-## v1 Reports
+---
 
-Every `chorus split` run writes:
+## Run
 
-- `center.wav`
-- `only.wav`
-- `surround.wav`
-- `report.json`
-- `report.md`
-- `spectrograms/input_left.png`
-- `spectrograms/input_right.png`
-- `spectrograms/Lc.png`
-- `spectrograms/Rc.png`
-- `spectrograms/Lo.png`
-- `spectrograms/Ro.png`
-- `spectrograms/Ls.png`
-- `spectrograms/Rs.png`
+### Python — single file
 
-STFT remains the default reference transform. FrFT and Wavelet can be selected for v1 reconstruction experiments, but reports label them separately from the STFT reference path.
+```bash
+poetry run chorus split input.wav --out-dir out/ --transform stft
+```
 
-## Acceptance Gate
+Options:
 
-Transform pass-through tests are mandatory. If unchanged stereo cannot round-trip through the STFT, FrFT, and Wavelet analyzer/reconstructor paths within tolerance, v1 transform validation is not considered valid.
+| Flag | Default | Values |
+|---|---|---|
+| `--transform` | `stft` | `stft`, `frft`, `wavelet` |
+| `--frame-size` | `1024` | |
+| `--hop-size` | `512` | |
+| `--smoothing-alpha` | `0.9` | |
+| `--epsilon` | `1e-9` | |
+| `--filters` | _(none)_ | path to JSON filter config |
 
-STFT remains the trusted split path. FrFT and Wavelet passing the round-trip gate means they are reconstruction-capable research transforms, not promoted production split engines.
+### Rust — single file
 
-## Roadmap
+```bash
+rust/chorus-dsp/target/release/chorus_split input.wav out/ --transform stft
+```
 
-v1 adds transform validation, reconstruction-capable FrFT and Wavelet experiments, and report artifacts with spectrograms for all upmixed channels.
+Supports `--transform stft`, `frft`, and `wavelet`.
 
-v2 will enable the application of arbitrary filters to each upmixed component.
+---
 
-v3 will be a rewrite in Rust with VST/JUCE/AU/CLAP plugin integration.
+## Process a directory
 
-## v2 Contribution Filters
+### Python
 
-Filters are configured per reconstructed contribution:
+```bash
+for f in /path/to/wavs/*.wav; do
+  name=$(basename "$f" .wav)
+  poetry run chorus split "$f" --out-dir "output/${name}/stft" --transform stft
+  poetry run chorus split "$f" --out-dir "output/${name}/frft" --transform frft
+  poetry run chorus split "$f" --out-dir "output/${name}/wavelet" --transform wavelet
+done
+```
+
+### Rust
+
+```bash
+for f in /path/to/wavs/*.wav; do
+  name=$(basename "$f" .wav)
+  rust/chorus-dsp/target/release/chorus_split "$f" "output/rust/${name}/stft" --transform stft
+  rust/chorus-dsp/target/release/chorus_split "$f" "output/rust/${name}/frft" --transform frft
+  rust/chorus-dsp/target/release/chorus_split "$f" "output/rust/${name}/wavelet" --transform wavelet
+done
+```
+
+---
+
+## Contribution Filters (v2)
+
+Filter chains are applied per-contribution after reconstruction. Configure via JSON:
 
 ```json
 {
@@ -72,36 +103,62 @@ Filters are configured per reconstructed contribution:
 }
 ```
 
-Run:
-
 ```bash
-poetry run chorus split input.wav --out-dir out --filters filters.json
+poetry run chorus split input.wav --out-dir out/ --filters filters.json
 ```
 
-Valid contribution names are `Lc`, `Rc`, `Lo`, `Ro`, `Ls`, and `Rs`. Invalid contribution names, unsupported filter types, and invalid parameter ranges fail before output audio is written.
+Valid contributions: `Lc`, `Rc`, `Lo`, `Ro`, `Ls`, `Rs`. Invalid names, unsupported filter types, or out-of-range parameters fail before any audio is written.
 
-## v3 Rust/JUCE Validation
+Supported filter types: `unity`, `gain` (`db`), `polarity`, `mute`, `solo`, `eq` (`mode`: `highpass`/`lowpass`/`peaking`, `frequency_hz`, `q`, `gain_db`).
 
-Generate Python v2 fixtures:
+---
+
+## Transforms
+
+STFT is the reference path. FrFT and Wavelet are reconstruction-capable experimental transforms.
+
+| Transform | Python | Rust | Notes |
+|---|---|---|---|
+| STFT | reference | fixture-matched | sqrt-Hann, 50% overlap, 1024-sample frames |
+| FrFT | OLA (sqrt-Hann, 50%) | Ozaktas-Kutay | Rust/Python fixture parity pending algorithm alignment |
+| Wavelet | db4, level 3 | fixture-matched | 512-sample frames, overlap-save |
+
+---
+
+## Validation
+
+### Python tests
 
 ```bash
-poetry run python scripts/generate_v2_fixtures.py
+poetry run pytest
 ```
 
-Run Rust validation:
+### Rust tests
 
 ```bash
 cargo test --manifest-path rust/chorus-dsp/Cargo.toml
 cargo test --manifest-path rust/chorus-ffi/Cargo.toml
 ```
 
-Build the plugin after installing JUCE:
+### Regenerate Python v2 fixtures
 
 ```bash
-test -n "$JUCE_DIR"
-cmake -S plugin -B plugin/build -DJUCE_DIR="$JUCE_DIR"
-cmake --build plugin/build
-ctest --test-dir plugin/build --output-on-failure
+poetry run python scripts/generate_v2_fixtures.py
 ```
 
-v3 is not valid until Rust fixture tests match Python v2 outputs and the JUCE wrapper loads in at least one plugin host or validator. Note: two fixture cases (`rust_matches_python_frft_fixture` and `rust_matches_python_known_eq_preset_fixture`) are currently `#[ignore]`d pending FrFT parity alignment and Rust EQ biquad implementation.
+---
+
+## Known gaps
+
+- `rust_matches_python_frft_fixture` — `#[ignore]`d: Python FrFT uses a phase-shifted FFT approximation; Rust implements true Ozaktas-Kutay. Parity requires updating Python to match.
+- `rust_matches_python_known_eq_preset_fixture` — `#[ignore]`d: EQ biquad implementation pending for the non-STFT (wavelet, FrFT) paths.
+- JUCE plugin wrapper — not yet built; planned for v3.
+
+---
+
+## Roadmap
+
+- **v0** — Python offline splitter with STFT ✓
+- **v1** — FrFT/Wavelet adapters, spectrogram reports ✓
+- **v2** — Per-contribution filter chains ✓
+- **v3** — Rust DSP core (streaming, real-time) ✓ / JUCE plugin wrapper (pending)
