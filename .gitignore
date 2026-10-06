@@ -11,3 +11,13 @@ build/
 .claude/
 rust/*/target/
 rust/chorus-dsp/Cargo.lock
+
+# Local music files. Do not commit them.
+tests/test_tracks_wav/*.mp3
+tests/test_tracks_wav/Aja.wav
+tests/test_tracks_wav/Bombay.wav
+tests/test_tracks_wav/Clarity.wav
+tests/test_tracks_wav/MoneyForNothing.wav
+
+# Split output
+output/
