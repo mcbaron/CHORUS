@@ -93,7 +93,7 @@ $$
 $$
 
 $$
-w = \frac{\operatorname{Re}\,\Phi_{PX}}{\max(\Phi_{XX},\ \varepsilon)}
+w = \frac{\mathrm{Re}\,\Phi_{PX}}{\max(\Phi_{XX},\ \varepsilon)}
 $$
 
 The estimate $wX$ is a scaled copy of the input bin. Thus it keeps the original phase
