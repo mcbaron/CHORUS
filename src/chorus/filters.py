@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from scipy import signal
 
 CONTRIBUTIONS = frozenset({"Lc", "Rc", "Lo", "Ro", "Ls", "Rs"})
 FILTER_TYPES = frozenset({"unity", "gain", "mute", "solo", "polarity", "eq"})
@@ -149,11 +148,12 @@ def _ensure_finite(name: str, audio: np.ndarray) -> None:
         raise ValueError(f"filtered output for {name} contains NaN or infinity")
 
 
-def _level(audio: np.ndarray) -> dict[str, float]:
-    magnitude = np.abs(audio)
+def level_metrics(audio: np.ndarray) -> dict[str, float]:
+    if not audio.size:
+        return {"rms": 0.0, "peak": 0.0}
     return {
-        "rms": float(np.sqrt(np.mean(np.square(magnitude)))) if audio.size else 0.0,
-        "peak": float(np.max(magnitude)) if audio.size else 0.0,
+        "rms": float(np.sqrt(np.mean(np.square(np.abs(audio))))),
+        "peak": float(np.max(np.abs(audio))),
     }
 
 
@@ -166,7 +166,7 @@ def apply_filter_chains(
         name for name, chain in chains.items() if any(spec.type == "solo" for spec in chain)
     )
     filtered: dict[str, np.ndarray] = {}
-    pre_levels = {name: _level(audio) for name, audio in contributions.items()}
+    pre_levels = {name: level_metrics(audio) for name, audio in contributions.items()}
     post_levels: dict[str, dict[str, float]] = {}
     for name in sorted(CONTRIBUTIONS):
         source = np.real_if_close(contributions[name], tol=1000)
@@ -179,7 +179,7 @@ def apply_filter_chains(
             audio = np.zeros_like(audio)
         _ensure_finite(name, audio)
         filtered[name] = audio
-        post_levels[name] = _level(audio)
+        post_levels[name] = level_metrics(audio)
     transparent = not soloed and all(_is_unity_chain(chain) for chain in chains.values())
     return filtered, {
         "chains": {

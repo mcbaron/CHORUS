@@ -1,9 +1,11 @@
 use num_complex::Complex;
+use rustfft::FftPlanner;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
 
-const CONTRIBUTIONS: [&str; 6] = ["Lc", "Rc", "Lo", "Ro", "Ls", "Rs"];
+/// Contribution names. Even indices go to the left channel, odd indices to the right.
+pub const CONTRIBUTIONS: [&str; 6] = ["Lc", "Rc", "Lo", "Ro", "Ls", "Rs"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
@@ -29,78 +31,6 @@ pub fn unity_chains() -> FilterChains {
         .iter()
         .map(|name| (name.to_string(), vec![FilterSpec::Unity]))
         .collect()
-}
-
-pub fn apply_chains(contributions: &BTreeMap<String, Vec<f64>>, chains: &FilterChains) -> BTreeMap<String, Vec<f64>> {
-    let soloed: Vec<String> = chains
-        .iter()
-        .filter(|(_, chain)| chain.iter().any(|spec| matches!(spec, FilterSpec::Solo)))
-        .map(|(name, _)| name.clone())
-        .collect();
-    let mut output = BTreeMap::new();
-    for name in CONTRIBUTIONS {
-        let mut audio = contributions.get(name).cloned().unwrap_or_default();
-        let default_chain = vec![FilterSpec::Unity];
-        let chain = chains.get(name).unwrap_or(&default_chain);
-        for spec in chain {
-            match spec {
-                FilterSpec::Unity | FilterSpec::Solo => {}
-                FilterSpec::Gain { db } => {
-                    let scale = 10.0_f64.powf(db / 20.0);
-                    for sample in &mut audio {
-                        *sample *= scale;
-                    }
-                }
-                FilterSpec::Mute => audio.fill(0.0),
-                FilterSpec::Polarity => {
-                    for sample in &mut audio {
-                        *sample = -*sample;
-                    }
-                }
-                FilterSpec::Eq { .. } => {
-                    // Implement this to match Python v2 EQ fixtures before running parity tests.
-                    panic!("Rust EQ filter must be implemented against Python v2 fixtures")
-                }
-            }
-        }
-        if !soloed.is_empty() && !soloed.iter().any(|solo| solo == name) {
-            audio.fill(0.0);
-        }
-        output.insert(name.to_string(), audio);
-    }
-    output
-}
-
-/// Returns the effective scalar multiplier for a single contribution after applying its filter chain.
-/// `soloed` should be the pre-computed list of soloed contribution names (empty = none soloed).
-pub fn chain_scalar(chains: &FilterChains, name: &str, soloed: &[String]) -> f64 {
-    // If any solo exists and this contribution is not soloed, mute it
-    if !soloed.is_empty() && !soloed.iter().any(|s| s == name) {
-        return 0.0;
-    }
-
-    let default_chain = vec![FilterSpec::Unity];
-    let chain = chains.get(name).unwrap_or(&default_chain);
-
-    let mut scalar = 1.0_f64;
-    for spec in chain {
-        match spec {
-            FilterSpec::Unity | FilterSpec::Solo => {}
-            FilterSpec::Gain { db } => {
-                scalar *= 10.0_f64.powf(db / 20.0);
-            }
-            FilterSpec::Mute => {
-                scalar = 0.0;
-            }
-            FilterSpec::Polarity => {
-                scalar = -scalar;
-            }
-            FilterSpec::Eq { .. } => {
-                panic!("chain_scalar does not support EQ filters; use apply_chain_to_bins or apply_chain_to_real_signal");
-            }
-        }
-    }
-    scalar
 }
 
 /// Apply a filter chain to a mutable slice of complex spectral bins in-place.
@@ -208,49 +138,7 @@ pub fn eq_frequency_response(
     h
 }
 
-/// Apply a biquad EQ filter to a real-valued signal using rfft → H(ω) → irfft.
-pub fn apply_eq_to_real_signal(
-    signal: &[f64],
-    mode: &str,
-    frequency_hz: f64,
-    q: f64,
-    gain_db: f64,
-    sample_rate: u32,
-) -> Vec<f64> {
-    use rustfft::FftPlanner;
-
-    let n = signal.len();
-    if n == 0 {
-        return Vec::new();
-    }
-    let num_bins = n / 2 + 1;
-
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(n);
-    let mut buf: Vec<Complex<f64>> = signal.iter().map(|&x| Complex::new(x, 0.0)).collect();
-    fft.process(&mut buf);
-
-    let mut spectrum: Vec<Complex<f64>> = buf[..num_bins].to_vec();
-    let h = eq_frequency_response(mode, frequency_hz, q, gain_db, sample_rate, num_bins);
-    for (bin, hi) in spectrum.iter_mut().zip(h.iter()) {
-        *bin *= hi;
-    }
-
-    let mut ifft_buf: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); n];
-    ifft_buf[..num_bins].copy_from_slice(&spectrum);
-    // For even n, Nyquist bin (num_bins-1) is real-valued and self-conjugate — do not mirror it.
-    // For odd n, all non-DC bins need mirroring.
-    let mirror_end = if n % 2 == 0 { num_bins - 1 } else { num_bins };
-    for k in 1..mirror_end {
-        ifft_buf[n - k] = spectrum[k].conj();
-    }
-    let ifft = planner.plan_fft_inverse(n);
-    ifft.process(&mut ifft_buf);
-
-    ifft_buf.iter().map(|c| c.re / n as f64).collect()
-}
-
-/// Apply a filter chain to a real-valued signal vector.
+/// Apply a filter chain to a real-valued signal through its spectrum.
 /// Returns a zero vector if muted or not soloed.
 pub fn apply_chain_to_real_signal(
     signal: &[f64],
@@ -259,50 +147,42 @@ pub fn apply_chain_to_real_signal(
     soloed: &[String],
     name: &str,
 ) -> Vec<f64> {
-    if !soloed.is_empty() && !soloed.iter().any(|s| s == name) {
-        return vec![0.0; signal.len()];
+    let n = signal.len();
+    if n == 0 {
+        return Vec::new();
     }
-
-    let mut result = signal.to_vec();
-    for spec in chain {
-        match spec {
-            FilterSpec::Unity | FilterSpec::Solo => {}
-            FilterSpec::Gain { db } => {
-                let scale = 10.0_f64.powf(db / 20.0);
-                for s in result.iter_mut() { *s *= scale; }
-            }
-            FilterSpec::Mute => {
-                return vec![0.0; signal.len()];
-            }
-            FilterSpec::Polarity => {
-                for s in result.iter_mut() { *s = -*s; }
-            }
-            FilterSpec::Eq { mode, frequency_hz, q, gain_db } => {
-                let gdb = gain_db.unwrap_or(0.0);
-                result = apply_eq_to_real_signal(&result, mode, *frequency_hz, *q, gdb, sample_rate);
-            }
-        }
+    let num_bins = n / 2 + 1;
+    let mut planner = FftPlanner::new();
+    let mut buf: Vec<Complex<f64>> = signal.iter().map(|&x| Complex::new(x, 0.0)).collect();
+    planner.plan_fft_forward(n).process(&mut buf);
+    buf.truncate(num_bins);
+    if !apply_chain_to_bins(&mut buf, chain, sample_rate, soloed, name) {
+        return vec![0.0; n];
     }
-    result
+    buf.resize(n, Complex::new(0.0, 0.0));
+    // For even n, the Nyquist bin (num_bins-1) is self-conjugate: do not mirror it.
+    let mirror_end = if n % 2 == 0 { num_bins - 1 } else { num_bins };
+    for k in 1..mirror_end {
+        buf[n - k] = buf[k].conj();
+    }
+    planner.plan_fft_inverse(n).process(&mut buf);
+    buf.iter().map(|c| c.re / n as f64).collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_chains, unity_chains, FilterSpec};
+    use super::{apply_chain_to_real_signal, FilterSpec};
 
     #[test]
-    fn applies_gain_and_polarity() {
-        let contributions = ["Lc", "Rc", "Lo", "Ro", "Ls", "Rs"]
-            .into_iter()
-            .map(|name| (name.to_string(), vec![1.0, 1.0]))
-            .collect();
-        let mut chains = unity_chains();
-        chains.insert("Lc".to_string(), vec![FilterSpec::Gain { db: 6.0 }]);
-        chains.insert("Rs".to_string(), vec![FilterSpec::Polarity]);
-        let output = apply_chains(&contributions, &chains);
-        assert!(output["Lc"][0] > 1.99);
-        assert_eq!(output["Rs"], vec![-1.0, -1.0]);
-        assert_eq!(output["Rc"], vec![1.0, 1.0]);
+    fn applies_gain_polarity_and_solo() {
+        let signal = vec![1.0, 1.0, 1.0, 1.0];
+        let gain = apply_chain_to_real_signal(&signal, &[FilterSpec::Gain { db: 6.0 }], 48_000, &[], "Lc");
+        assert!(gain.iter().all(|s| *s > 1.99));
+        let flipped = apply_chain_to_real_signal(&signal, &[FilterSpec::Polarity], 48_000, &[], "Rs");
+        assert!(flipped.iter().all(|s| (s + 1.0).abs() < 1e-12));
+        let soloed = vec!["Ls".to_string()];
+        let muted = apply_chain_to_real_signal(&signal, &[FilterSpec::Unity], 48_000, &soloed, "Rc");
+        assert_eq!(muted, vec![0.0; 4]);
     }
 
     #[test]
@@ -367,16 +247,12 @@ mod tests {
     }
 
     #[test]
-    fn apply_eq_to_real_signal_unity_roundtrip_odd_length() {
-        // Unity EQ (gain_db=0 peaking with very high Q → no effect) should return
-        // a signal close to the input for odd n.
-        // Use highpass at 0 Hz ≈ unity (or just use a sine and check finite + non-corrupt).
-        // Actually: apply lowpass at near-Nyquist, should be close to identity.
-        // Simpler: apply gain=0 peaking at some freq and verify round-trip.
-        // Use peaking with gain_db=0.0 → a_lin=1.0 → H_total = 1 + H_peak * 0 = 1 everywhere
+    fn real_signal_unity_eq_roundtrip_odd_length() {
+        // Peaking EQ with gain_db=0 gives H = 1 everywhere, so the signal must come back.
         let n = 7usize; // odd
         let signal: Vec<f64> = (0..n).map(|i| i as f64).collect();
-        let result = super::apply_eq_to_real_signal(&signal, "peaking", 1000.0, 1.0, 0.0, 48_000);
+        let eq = FilterSpec::Eq { mode: "peaking".into(), frequency_hz: 1000.0, q: 1.0, gain_db: Some(0.0) };
+        let result = apply_chain_to_real_signal(&signal, &[eq], 48_000, &[], "Lo");
         assert_eq!(result.len(), n);
         for (orig, got) in signal.iter().zip(result.iter()) {
             assert!(

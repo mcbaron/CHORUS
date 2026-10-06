@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from chorus.core import ChorusResult
+from chorus.filters import level_metrics
 from chorus.transforms import FrFTTransform, STFTConfig, STFTTransform, WaveletTransform
 
 
@@ -61,8 +62,7 @@ def _residual_summary(reference: np.ndarray, candidate: np.ndarray) -> dict[str,
     }
 
 
-def analyze_transforms(sample_rate: int, input_audio: np.ndarray) -> dict[str, dict[str, object]]:
-    del sample_rate
+def analyze_transforms(input_audio: np.ndarray) -> dict[str, dict[str, object]]:
     transforms = {
         "stft": STFTTransform(STFTConfig()),
         "frft": FrFTTransform(),
@@ -101,16 +101,7 @@ def analyze_transforms(sample_rate: int, input_audio: np.ndarray) -> dict[str, d
     return analysis
 
 
-def level_metrics(audio: np.ndarray) -> dict[str, float]:
-    if not audio.size:
-        return {"rms": 0.0, "peak": 0.0}
-    return {
-        "rms": float(np.sqrt(np.mean(np.square(audio)))),
-        "peak": float(np.max(np.abs(audio))),
-    }
-
-
-def build_v1_report(
+def build_report(
     input_path: str | Path,
     output_dir: str | Path,
     sample_rate: int,
@@ -119,7 +110,7 @@ def build_v1_report(
     stem_paths: dict[str, Path],
 ) -> dict[str, object]:
     spectrograms = render_spectrograms(output_dir, sample_rate, input_audio, result)
-    transform_analysis = analyze_transforms(sample_rate, input_audio)
+    transform_analysis = analyze_transforms(input_audio)
     reconstructed = result.center + result.only + result.surround
     residual = _residual_summary(input_audio, reconstructed)
     filter_report = result.metadata.get("filters", {"transparent": True})
@@ -144,7 +135,6 @@ def build_v1_report(
         "settings": {
             k: ({ik: iv for ik, iv in v.items() if ik != "coeff_slices"} if k == "transform" and isinstance(v, dict) else v)
             for k, v in result.metadata.items()
-            if k != "coeff_slices"
         },
         "filters": filter_report,
         "levels": {

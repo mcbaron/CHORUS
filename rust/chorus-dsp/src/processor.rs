@@ -1,11 +1,9 @@
 use crate::filters::{unity_chains, FilterChains};
 use crate::transforms::{StreamingFrft, StreamingStft, StreamingWavelet, Transform, TransformKind};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DspConfig {
-    /// Note: sample_rate is not currently forwarded to transform constructors (transforms use fixed 48kHz defaults).
     pub sample_rate: u32,
     pub epsilon: f64,
     pub filter_chains: FilterChains,
@@ -24,52 +22,37 @@ impl Default for DspConfig {
     }
 }
 
-impl DspConfig {
-    /// Low-latency preset: frame_size=512, hop_size=256 (~10.7ms at 48kHz vs ~21.3ms default).
-    ///
-    /// Profiling confirmed real-time safety for all target DJ-host callback sizes.
-    pub fn low_latency() -> Self {
-        Self {
-            sample_rate: 48_000,
-            epsilon: 1e-9,
-            filter_chains: crate::filters::unity_chains(),
-            transform: crate::transforms::TransformKind::Stft {
-                frame_size: 512,
-                hop_size: 256,
-                smoothing_alpha: 0.0,
-            },
-        }
-    }
-}
-
 fn build_transform(config: &DspConfig) -> Box<dyn Transform> {
     match &config.transform {
         TransformKind::Stft { frame_size, hop_size, smoothing_alpha } =>
             Box::new(StreamingStft::new(*frame_size, *hop_size, config.sample_rate, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
         TransformKind::Frft { order, frame_size, smoothing_alpha } =>
-            Box::new(StreamingFrft::new(*order, *frame_size, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
-        TransformKind::Wavelet { wavelet: _, level, frame_size, smoothing_alpha } =>
+            Box::new(StreamingFrft::new(*order, *frame_size, config.sample_rate, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
+        TransformKind::Wavelet { level, frame_size, smoothing_alpha } =>
             Box::new(StreamingWavelet::new(*level, *frame_size, config.sample_rate, *smoothing_alpha, config.epsilon, config.filter_chains.clone())),
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum ChorusError {
-    #[error("input must contain at least one stereo frame")]
     EmptyInput,
 }
 
+impl std::fmt::Display for ChorusError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("input must contain at least one stereo frame")
+    }
+}
+
+impl std::error::Error for ChorusError {}
+
 pub struct ChorusDsp {
-    // Retained for inspection/serialization; transform reconfiguration requires re-constructing ChorusDsp.
-    #[allow(dead_code)]
-    config: DspConfig,
     transform: Box<dyn Transform>,
 }
 
 impl ChorusDsp {
     pub fn new(config: DspConfig) -> Self {
-        let transform = build_transform(&config);
-        Self { config, transform }
+        Self { transform: build_transform(&config) }
     }
 
     pub fn process(&mut self, input: &[[f64; 2]]) -> Result<Vec<[f64; 2]>, ChorusError> {
@@ -115,21 +98,6 @@ mod tests {
         dsp.reset();
         // After reset, processing again should not panic
         let _ = dsp.process(&input);
-    }
-
-    #[test]
-    fn low_latency_preset_produces_output() {
-        let input: Vec<[f64; 2]> = (0..2048).map(|i| {
-            let t = i as f64 / 48_000.0;
-            let s = (2.0 * std::f64::consts::PI * 440.0 * t).sin() * 0.5;
-            [s, s]
-        }).collect();
-        let mut dsp = ChorusDsp::new(DspConfig::low_latency());
-        let output = dsp.process(&input).unwrap();
-        assert!(!output.is_empty(), "low_latency preset produced no output for 2048 input samples");
-        for &[l, r] in &output {
-            assert!(l.is_finite() && r.is_finite(), "non-finite sample in low_latency output");
-        }
     }
 
     #[test]

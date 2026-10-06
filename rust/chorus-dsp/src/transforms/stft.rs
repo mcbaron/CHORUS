@@ -3,24 +3,18 @@ use std::sync::Arc;
 use num_complex::Complex;
 use rustfft::FftPlanner;
 
-use crate::estimation::ComplexEstimator;
-use crate::filters::{FilterChains, FilterSpec};
-use crate::prototypes::{center_prototype, surround_prototype};
+use crate::estimation::Splitter;
+use crate::filters::{FilterChains, CONTRIBUTIONS};
 use crate::transforms::Transform;
 
 pub struct StreamingStft {
     frame_size: usize,
     hop_size: usize,
-    sample_rate: u32,
     window: Vec<f64>,
     input_buf: VecDeque<[f64; 2]>,
     output_buf: VecDeque<[f64; 2]>,
     overlap: Vec<[f64; 2]>,
-    lc_est: ComplexEstimator,
-    rc_est: ComplexEstimator,
-    ls_est: ComplexEstimator,
-    rs_est: ComplexEstimator,
-    filter_chains: FilterChains,
+    splitter: Splitter,
     fft: Arc<dyn rustfft::Fft<f64>>,
     ifft: Arc<dyn rustfft::Fft<f64>>,
 }
@@ -51,16 +45,11 @@ impl StreamingStft {
         Self {
             frame_size,
             hop_size,
-            sample_rate,
             window,
             input_buf: VecDeque::new(),
             output_buf: VecDeque::new(),
             overlap: vec![[0.0, 0.0]; frame_size - hop_size],
-            lc_est: ComplexEstimator::new(smoothing_alpha, epsilon, num_bins),
-            rc_est: ComplexEstimator::new(smoothing_alpha, epsilon, num_bins),
-            ls_est: ComplexEstimator::new(smoothing_alpha, epsilon, num_bins),
-            rs_est: ComplexEstimator::new(smoothing_alpha, epsilon, num_bins),
-            filter_chains,
+            splitter: Splitter::new(smoothing_alpha, epsilon, num_bins, sample_rate, filter_chains),
             fft,
             ifft,
         }
@@ -97,133 +86,48 @@ impl StreamingStft {
     fn process_hop(&mut self) {
         let frame_size = self.frame_size;
         let hop_size = self.hop_size;
-        let num_bins = frame_size / 2 + 1;
 
-        // Extract frame_size samples from input_buf
-        let frame: Vec<[f64; 2]> = self.input_buf.iter().take(frame_size).copied().collect();
+        // Window the first frame_size samples and separate channels
+        let left_windowed: Vec<f64> = self.input_buf.iter().zip(&self.window).map(|(s, w)| s[0] * w).collect();
+        let right_windowed: Vec<f64> = self.input_buf.iter().zip(&self.window).map(|(s, w)| s[1] * w).collect();
+        let contributions = self.splitter.split(&self.rfft(&left_windowed), &self.rfft(&right_windowed));
 
-        // Apply window and separate channels
-        let left_windowed: Vec<f64> = frame.iter().enumerate().map(|(i, s)| s[0] * self.window[i]).collect();
-        let right_windowed: Vec<f64> = frame.iter().enumerate().map(|(i, s)| s[1] * self.window[i]).collect();
-
-        // Forward FFT per channel
-        let left_bins = self.rfft(&left_windowed);
-        let right_bins = self.rfft(&right_windowed);
-
-        // Compute prototypes
-        let center_proto = center_prototype(&left_bins, &right_bins);
-        let surround_proto = surround_prototype(&left_bins, &right_bins);
-
-        // Run estimators
-        let lc_bins = self.lc_est.estimate(&center_proto, &left_bins).to_vec();
-        let rc_bins = self.rc_est.estimate(&center_proto, &right_bins).to_vec();
-        let ls_bins = self.ls_est.estimate(&surround_proto, &left_bins).to_vec();
-        let rs_bins = self.rs_est.estimate(&surround_proto, &right_bins).to_vec();
-
-        // Derive Lo, Ro residuals
-        let lo_bins: Vec<Complex<f64>> = (0..num_bins)
-            .map(|k| left_bins[k] - lc_bins[k] - ls_bins[k])
-            .collect();
-        let ro_bins: Vec<Complex<f64>> = (0..num_bins)
-            .map(|k| right_bins[k] - rc_bins[k] - rs_bins[k])
-            .collect();
-
-        // Compute solo list for filter chains
-        let soloed: Vec<String> = self.filter_chains
-            .iter()
-            .filter(|(_, chain)| chain.iter().any(|spec| matches!(spec, FilterSpec::Solo)))
-            .map(|(name, _)| name.clone())
-            .collect();
-
-        let sample_rate = self.sample_rate;
-        let apply_chain = |mut bins: Vec<Complex<f64>>, name: &str| -> Vec<Complex<f64>> {
-            let default_chain = vec![FilterSpec::Unity];
-            let chain = self.filter_chains.get(name).unwrap_or(&default_chain);
-            let keep = crate::filters::apply_chain_to_bins(&mut bins, chain, sample_rate, &soloed, name);
-            if keep { bins } else { vec![Complex::new(0.0, 0.0); bins.len()] }
-        };
-
-        let lc_scaled = apply_chain(lc_bins, "Lc");
-        let rc_scaled = apply_chain(rc_bins, "Rc");
-        let lo_scaled = apply_chain(lo_bins, "Lo");
-        let ro_scaled = apply_chain(ro_bins, "Ro");
-        let ls_scaled = apply_chain(ls_bins, "Ls");
-        let rs_scaled = apply_chain(rs_bins, "Rs");
-
-        // IFFT each contribution separately, apply synthesis window, overlap-add into output frame.
-        // Lc, Lo, Ls → left channel (index 0); Rc, Ro, Rs → right channel (index 1).
-        let contributions: &[(&[Complex<f64>], usize)] = &[
-            (&lc_scaled, 0),
-            (&lo_scaled, 0),
-            (&ls_scaled, 0),
-            (&rc_scaled, 1),
-            (&ro_scaled, 1),
-            (&rs_scaled, 1),
-        ];
-
-        let overlap_len = frame_size - hop_size;
-
-        // Accumulate windowed time-domain signals per channel
+        // Filter and IFFT each contribution, apply the synthesis window, and sum per channel.
         let mut out_frame: Vec<[f64; 2]> = vec![[0.0, 0.0]; frame_size];
-
-        for (bins, ch) in contributions.iter() {
-            let time_signal = self.irfft(bins);
-            for i in 0..frame_size {
-                out_frame[i][*ch] += time_signal[i] * self.window[i];
+        for (i, (name, bins)) in CONTRIBUTIONS.iter().zip(contributions).enumerate() {
+            let time_signal = self.irfft(&self.splitter.filter_bins(name, bins));
+            for ((out, t), w) in out_frame.iter_mut().zip(&time_signal).zip(&self.window) {
+                out[i % 2] += t * w;
             }
         }
 
         // Add overlap tail to the beginning
-        for i in 0..overlap_len {
-            out_frame[i][0] += self.overlap[i][0];
-            out_frame[i][1] += self.overlap[i][1];
+        for (out, tail) in out_frame.iter_mut().zip(&self.overlap) {
+            out[0] += tail[0];
+            out[1] += tail[1];
         }
 
-        // Emit hop_size samples to output_buf
-        for i in 0..hop_size {
-            self.output_buf.push_back(out_frame[i]);
-        }
-
-        // Save the remaining samples as new overlap
-        // overlap_len = frame_size - hop_size
-        self.overlap.clear();
-        for i in hop_size..frame_size {
-            self.overlap.push([out_frame[i][0], out_frame[i][1]]);
-        }
-
-        // Advance input ring by hop_size
-        for _ in 0..hop_size {
-            self.input_buf.pop_front();
-        }
+        // Emit hop_size samples, keep the rest as the next overlap, and advance the input.
+        self.output_buf.extend(&out_frame[..hop_size]);
+        self.overlap = out_frame[hop_size..].to_vec();
+        self.input_buf.drain(..hop_size);
     }
 }
 
 impl Transform for StreamingStft {
     fn process_block(&mut self, input: &[[f64; 2]]) -> Vec<[f64; 2]> {
-        // Push input into buffer
-        for &sample in input {
-            self.input_buf.push_back(sample);
-        }
-
-        // Process all available hops
+        self.input_buf.extend(input);
         while self.input_buf.len() >= self.frame_size {
             self.process_hop();
         }
-
-        // Drain and return output
         self.output_buf.drain(..).collect()
     }
 
     fn reset(&mut self) {
         self.input_buf.clear();
         self.output_buf.clear();
-        for s in &mut self.overlap {
-            *s = [0.0, 0.0];
-        }
-        self.lc_est.reset();
-        self.rc_est.reset();
-        self.ls_est.reset();
-        self.rs_est.reset();
+        self.overlap.fill([0.0, 0.0]);
+        self.splitter.reset();
     }
 }
 
@@ -307,39 +211,7 @@ mod tests {
     }
 
     fn run_wav_round_trip(path: &str) {
-        let mut reader = hound::WavReader::open(path)
-            .unwrap_or_else(|e| panic!("could not open {path}: {e}"));
-        let spec = reader.spec();
-        let num_channels = spec.channels as usize;
-        assert!(num_channels <= 2, "expected mono or stereo WAV");
-
-        // Normalize samples to [-1.0, 1.0] regardless of bit depth
-        let scale = match spec.sample_format {
-            hound::SampleFormat::Float => 1.0_f64,
-            hound::SampleFormat::Int => 1.0 / (1_i64.checked_shl(spec.bits_per_sample as u32 - 1).unwrap_or(1) as f64),
-        };
-
-        let raw_samples: Vec<f64> = match spec.sample_format {
-            hound::SampleFormat::Float => reader
-                .samples::<f32>()
-                .map(|s| s.expect("read error") as f64)
-                .collect(),
-            hound::SampleFormat::Int => reader
-                .samples::<i32>()
-                .map(|s| s.expect("read error") as f64 * scale)
-                .collect(),
-        };
-
-        // Build stereo signal
-        let signal: Vec<[f64; 2]> = if num_channels == 2 {
-            raw_samples
-                .chunks(2)
-                .map(|c| [c[0], c[1]])
-                .collect()
-        } else {
-            raw_samples.iter().map(|&s| [s, s]).collect()
-        };
-
+        let (_, signal) = crate::load_wav_stereo(path).unwrap_or_else(|e| panic!("could not open {path}: {e}"));
         let num_samples = signal.len();
         let mut stft = make_stft();
         let mut all_output: Vec<[f64; 2]> = Vec::new();

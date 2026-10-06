@@ -16,13 +16,6 @@ pub trait Transform: Send {
     fn reset(&mut self);
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub enum WaveletKind {
-    #[default]
-    #[serde(rename = "db4")]
-    Db4,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransformKind {
     Stft {
@@ -35,8 +28,8 @@ pub enum TransformKind {
         frame_size: usize,
         smoothing_alpha: f64,
     },
+    /// Daubechies-4 only.
     Wavelet {
-        wavelet: WaveletKind,
         level: usize,
         frame_size: usize,
         smoothing_alpha: f64,

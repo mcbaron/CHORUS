@@ -1,13 +1,5 @@
 use num_complex::Complex;
 
-pub fn center_prototype_real(left: &[f64], right: &[f64]) -> Vec<f64> {
-    left.iter().zip(right).map(|(l, r)| 0.5 * (l + r)).collect()
-}
-
-pub fn surround_prototype_real(left: &[f64], right: &[f64]) -> Vec<f64> {
-    left.iter().zip(right).map(|(l, r)| 0.5 * (l - r)).collect()
-}
-
 pub fn center_prototype(left: &[Complex<f64>], right: &[Complex<f64>]) -> Vec<Complex<f64>> {
     left.iter().zip(right).map(|(l, r)| {
         let shared = l.norm().min(r.norm());
@@ -29,14 +21,8 @@ fn safe_unit_phase(v: Complex<f64>) -> Complex<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{center_prototype_real, surround_prototype_real, center_prototype, surround_prototype};
+    use super::{center_prototype, surround_prototype};
     use num_complex::Complex;
-
-    #[test]
-    fn builds_center_and_surround_prototypes() {
-        assert_eq!(center_prototype_real(&[1.0, 1.0], &[1.0, -1.0]), vec![1.0, 0.0]);
-        assert_eq!(surround_prototype_real(&[1.0, 1.0], &[1.0, -1.0]), vec![0.0, 1.0]);
-    }
 
     #[test]
     fn complex_prototypes_pure_real_inputs() {

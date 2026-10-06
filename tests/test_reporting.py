@@ -6,7 +6,7 @@ from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.filters import normalize_filter_config
 from chorus.reporting import (
     analyze_transforms,
-    build_v1_report,
+    build_report,
     render_spectrograms,
     write_markdown_report,
 )
@@ -29,7 +29,7 @@ def test_render_spectrograms_writes_deterministic_artifacts(
 def test_analyze_transforms_records_reconstruction_metrics(
     stereo_identical: np.ndarray, sample_rate: int
 ) -> None:
-    analyzers = analyze_transforms(sample_rate, stereo_identical)
+    analyzers = analyze_transforms(stereo_identical)
 
     assert set(analyzers) == {"stft", "frft", "wavelet"}
     assert analyzers["stft"]["status"] == "ok"
@@ -53,7 +53,7 @@ def test_v1_report_includes_spectrograms_analyzers_and_markdown(
         "only": tmp_path / "only.wav",
         "surround": tmp_path / "surround.wav",
     }
-    report = build_v1_report(
+    report = build_report(
         tmp_path / "input.wav",
         tmp_path,
         sample_rate,
@@ -90,7 +90,7 @@ def test_report_records_filter_chains_and_filtered_output_status(
         "surround": tmp_path / "surround.wav",
     }
 
-    report = build_v1_report(
+    report = build_report(
         tmp_path / "input.wav",
         tmp_path,
         sample_rate,

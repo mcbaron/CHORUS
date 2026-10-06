@@ -6,7 +6,6 @@ import numpy as np
 from scipy.io import wavfile
 
 from chorus.core import ChorusResult
-from chorus.reporting import build_v1_report
 
 
 def read_stereo_wav(path: str | Path) -> tuple[int, np.ndarray]:
@@ -44,13 +43,3 @@ def write_stems(
         wavfile.write(path, sample_rate, np.asarray(audio, dtype=np.float32))
     return stems
 
-
-def build_report(
-    input_path: str | Path,
-    output_dir: str | Path,
-    sample_rate: int,
-    input_audio: np.ndarray,
-    result: ChorusResult,
-    stem_paths: dict[str, Path],
-) -> dict[str, object]:
-    return build_v1_report(input_path, output_dir, sample_rate, input_audio, result, stem_paths)

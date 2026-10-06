@@ -7,8 +7,8 @@ from pathlib import Path
 
 from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.filters import normalize_filter_config
-from chorus.io import build_report, read_stereo_wav, write_stems
-from chorus.reporting import write_markdown_report
+from chorus.io import read_stereo_wav, write_stems
+from chorus.reporting import build_report, write_markdown_report
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -57,14 +57,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             result=result,
             stem_paths=stem_paths,
         )
-        report["filters"] = result.metadata["filters"]
         report_path = args.out_dir / "report.json"
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         write_markdown_report(args.out_dir, report)
-        return 0
-
-    parser.error(f"unsupported command {args.command}")
-    return 2
+    return 0
 
 
 if __name__ == "__main__":

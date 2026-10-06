@@ -1,30 +1,7 @@
 use num_complex::Complex;
 
-#[derive(Debug, Clone)]
-pub struct SmoothedScalarEstimator {
-    alpha: f64,
-    epsilon: f64,
-    previous: f64,
-}
-
-impl SmoothedScalarEstimator {
-    pub fn new(alpha: f64, epsilon: f64) -> Self {
-        Self {
-            alpha,
-            epsilon,
-            previous: 0.0,
-        }
-    }
-
-    pub fn estimate(&mut self, prototype: &[f64], source: &[f64]) -> Vec<f64> {
-        let numerator: f64 = prototype.iter().zip(source).map(|(p, s)| p * s).sum();
-        let denominator: f64 = prototype.iter().map(|p| p * p).sum::<f64>() + self.epsilon;
-        let instant = numerator / denominator;
-        let weight = self.alpha * self.previous + (1.0 - self.alpha) * instant;
-        self.previous = weight;
-        prototype.iter().map(|p| p * weight).collect()
-    }
-}
+use crate::filters::{apply_chain_to_bins, apply_chain_to_real_signal, FilterChains, FilterSpec};
+use crate::prototypes::{center_prototype, surround_prototype};
 
 #[derive(Debug, Clone)]
 pub struct ComplexEstimator {
@@ -73,19 +50,70 @@ impl ComplexEstimator {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{SmoothedScalarEstimator, ComplexEstimator};
-    use num_complex::Complex;
+const UNITY: &[FilterSpec] = &[FilterSpec::Unity];
 
-    #[test]
-    fn estimates_scaled_source() {
-        let mut estimator = SmoothedScalarEstimator::new(0.0, 1e-12);
-        let estimated = estimator.estimate(&[1.0, 2.0, 3.0], &[2.0, 4.0, 6.0]);
-        for (actual, expected) in estimated.iter().zip(&[2.0_f64, 4.0, 6.0]) {
-            approx::assert_abs_diff_eq!(actual, expected, epsilon = 1e-9);
+/// The prototype, estimation, and filter steps that every transform shares.
+pub struct Splitter {
+    estimators: [ComplexEstimator; 4], // Lc, Rc, Ls, Rs
+    filter_chains: FilterChains,
+    soloed: Vec<String>,
+    sample_rate: u32,
+}
+
+impl Splitter {
+    pub fn new(smoothing_alpha: f64, epsilon: f64, num_coeffs: usize, sample_rate: u32, filter_chains: FilterChains) -> Self {
+        let soloed = filter_chains
+            .iter()
+            .filter(|(_, chain)| chain.iter().any(|spec| matches!(spec, FilterSpec::Solo)))
+            .map(|(name, _)| name.clone())
+            .collect();
+        Self {
+            estimators: std::array::from_fn(|_| ComplexEstimator::new(smoothing_alpha, epsilon, num_coeffs)),
+            filter_chains,
+            soloed,
+            sample_rate,
         }
     }
+
+    /// Returns the unfiltered contributions in `filters::CONTRIBUTIONS` order.
+    pub fn split(&mut self, left: &[Complex<f64>], right: &[Complex<f64>]) -> [Vec<Complex<f64>>; 6] {
+        let center = center_prototype(left, right);
+        let surround = surround_prototype(left, right);
+        let [lc_est, rc_est, ls_est, rs_est] = &mut self.estimators;
+        let lc = lc_est.estimate(&center, left).to_vec();
+        let rc = rc_est.estimate(&center, right).to_vec();
+        let ls = ls_est.estimate(&surround, left).to_vec();
+        let rs = rs_est.estimate(&surround, right).to_vec();
+        let lo = (0..left.len()).map(|k| left[k] - lc[k] - ls[k]).collect();
+        let ro = (0..right.len()).map(|k| right[k] - rc[k] - rs[k]).collect();
+        [lc, rc, lo, ro, ls, rs]
+    }
+
+    fn chain(&self, name: &str) -> &[FilterSpec] {
+        self.filter_chains.get(name).map_or(UNITY, Vec::as_slice)
+    }
+
+    pub fn filter_bins(&self, name: &str, mut bins: Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+        if apply_chain_to_bins(&mut bins, self.chain(name), self.sample_rate, &self.soloed, name) {
+            bins
+        } else {
+            vec![Complex::new(0.0, 0.0); bins.len()]
+        }
+    }
+
+    pub fn filter_real(&self, name: &str, signal: &[f64]) -> Vec<f64> {
+        apply_chain_to_real_signal(signal, self.chain(name), self.sample_rate, &self.soloed, name)
+    }
+
+    pub fn reset(&mut self) {
+        self.estimators.iter_mut().for_each(ComplexEstimator::reset);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ComplexEstimator;
+    use num_complex::Complex;
 
     #[test]
     fn complex_estimator_identity_no_smoothing() {

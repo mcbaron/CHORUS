@@ -8,7 +8,8 @@ from scipy.io import wavfile
 
 from chorus.cli import main
 from chorus.core import ChorusConfig, ChorusProcessor
-from chorus.io import build_report, read_stereo_wav, write_stems
+from chorus.io import read_stereo_wav, write_stems
+from chorus.reporting import build_report
 
 
 def test_wav_read_write_and_report(

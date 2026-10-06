@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Protocol
 
 import numpy as np
 import pywt
@@ -13,7 +12,6 @@ from scipy.signal import ShortTimeFFT
 class STFTConfig:
     frame_size: int = 1024
     hop_size: int = 512
-    fft_size: int | None = None
 
 
 @dataclass(frozen=True)
@@ -21,14 +19,6 @@ class TransformRepresentation:
     data: np.ndarray
     original_shape: tuple[int, int]
     metadata: dict[str, object]
-
-
-class TimeFrequencyTransform(Protocol):
-    def forward(self, stereo: np.ndarray) -> TransformRepresentation:
-        """Convert stereo samples shaped (samples, 2) into transform coefficients."""
-
-    def inverse(self, representation: TransformRepresentation) -> np.ndarray:
-        """Convert transform coefficients back into stereo samples shaped (samples, 2)."""
 
 
 def _validate_stereo(stereo: np.ndarray) -> np.ndarray:
@@ -41,13 +31,10 @@ def _validate_stereo(stereo: np.ndarray) -> np.ndarray:
 class STFTTransform:
     def __init__(self, config: STFTConfig | None = None) -> None:
         self.config = config or STFTConfig()
-        fft_size = self.config.fft_size or self.config.frame_size
         if self.config.frame_size <= 0:
             raise ValueError("v0 STFT requires frame_size to be positive")
         if self.config.hop_size <= 0:
             raise ValueError("v0 STFT requires hop_size to be positive")
-        if fft_size != self.config.frame_size:
-            raise ValueError("v0 STFT requires fft_size to equal frame_size")
         window = np.sqrt(np.hanning(self.config.frame_size))
         self._stft = ShortTimeFFT(
             win=window,
@@ -92,48 +79,32 @@ class STFTTransform:
     def inverse_components(
         self, components: np.ndarray, original_shape: tuple[int, int]
     ) -> np.ndarray:
-        representation = TransformRepresentation(
-            data=components,
-            original_shape=original_shape,
-            metadata={
-                "transform": "stft",
-                "frame_size": self.config.frame_size,
-                "hop_size": self.config.hop_size,
-                "fft_size": self.config.frame_size,
-                "window": "sqrt_hann",
-                "experimental": False,
-            },
-        )
-        return self.inverse(representation)
+        return self.inverse(TransformRepresentation(components, original_shape, {}))
+
+
+def _chirp(n: int, order: float) -> tuple[np.ndarray, complex]:
+    phi = order * np.pi / 2.0
+    cot_phi = np.cos(phi) / np.sin(phi)
+    chirp = np.exp(-1j * np.pi * cot_phi * np.arange(n, dtype=np.float64) ** 2 / n)
+    norm = np.sqrt((1.0 - 1j * cot_phi) / (n * abs(1.0 / np.sin(phi))))
+    return chirp, norm
 
 
 def _frft_1d(x: np.ndarray, order: float) -> np.ndarray:
-    n = len(x)
     if order == 0.0:
         return np.asarray(x, dtype=complex)
     if order == 1.0:
         return np.fft.fft(x)
-    phi = order * np.pi / 2.0
-    indices = np.arange(n, dtype=np.float64)
-    cot_phi = np.cos(phi) / np.sin(phi)
-    csc_phi = 1.0 / np.sin(phi)
-    chirp = np.exp(-1j * np.pi * cot_phi * indices**2 / n)
-    norm = np.sqrt((1.0 - 1j * cot_phi) / (n * abs(csc_phi)))
+    chirp, norm = _chirp(len(x), order)
     return norm * np.fft.ifft(chirp * np.fft.fft(chirp * x))
 
 
 def _ifrft_1d(y: np.ndarray, order: float) -> np.ndarray:
-    n = len(y)
     if order == 0.0:
         return np.asarray(y, dtype=complex)
     if order == 1.0:
         return np.fft.ifft(y)
-    phi = order * np.pi / 2.0
-    indices = np.arange(n, dtype=np.float64)
-    cot_phi = np.cos(phi) / np.sin(phi)
-    csc_phi = 1.0 / np.sin(phi)
-    chirp = np.exp(-1j * np.pi * cot_phi * indices**2 / n)
-    norm = np.sqrt((1.0 - 1j * cot_phi) / (n * abs(csc_phi)))
+    chirp, norm = _chirp(len(y), order)
     return (1.0 / norm) * np.conj(chirp) * np.fft.ifft(np.conj(chirp) * np.fft.fft(y))
 
 
@@ -198,21 +169,7 @@ class FrFTTransform:
     def inverse_components(
         self, components: np.ndarray, original_shape: tuple[int, int]
     ) -> np.ndarray:
-        N = self.frame_size
-        H = self.hop_size
-        representation = TransformRepresentation(
-            data=components,
-            original_shape=original_shape,
-            metadata={
-                "transform": "frft",
-                "order": self.order,
-                "frame_size": N,
-                "hop_size": H,
-                "window": "sqrt_hann",
-                "experimental": True,
-            },
-        )
-        return self.inverse(representation)
+        return self.inverse(TransformRepresentation(components, original_shape, {}))
 
 
 class WaveletTransform:

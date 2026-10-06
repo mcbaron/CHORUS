@@ -1,12 +1,11 @@
 use std::collections::VecDeque;
 use num_complex::Complex;
 
-use crate::estimation::ComplexEstimator;
-use crate::filters::{FilterChains, FilterSpec};
-use crate::prototypes::{center_prototype, surround_prototype};
+use crate::estimation::Splitter;
+use crate::filters::{FilterChains, CONTRIBUTIONS};
 use crate::transforms::Transform;
 
-// Daubechies-4 (db4) decomposition filters (8 taps)
+// Daubechies-4 (db4) decomposition low-pass filter (8 taps)
 const DB4_LO: [f64; 8] = [
     -0.010597401784997278,
      0.032883011666982945,
@@ -17,38 +16,31 @@ const DB4_LO: [f64; 8] = [
      0.71484657055254153,
      0.23037781330885523,
 ];
-const DB4_HI: [f64; 8] = [
-    -0.23037781330885523,
-     0.71484657055254153,
-    -0.63088076792959036,
-    -0.027983769416983849,
-     0.18703481171888114,
-     0.030841381835986965,
-    -0.032883011666982945,
-    -0.010597401784997278,
-];
+// The other three filters follow from DB4_LO (quadrature mirror relations).
+const REC_LO: [f64; 8] = reversed(DB4_LO);
+const REC_HI: [f64; 8] = alternate_signs(DB4_LO);
+const DB4_HI: [f64; 8] = reversed(REC_HI);
 
-// Reconstruction (synthesis) filters: dec_lo / dec_hi reversed
-const REC_LO: [f64; 8] = [
-     0.23037781330885523,
-     0.71484657055254153,
-     0.63088076792959036,
-    -0.027983769416983849,
-    -0.18703481171888114,
-     0.030841381835986965,
-     0.032883011666982945,
-    -0.010597401784997278,
-];
-const REC_HI: [f64; 8] = [
-    -0.010597401784997278,
-    -0.032883011666982945,
-     0.030841381835986965,
-     0.18703481171888114,
-    -0.027983769416983849,
-    -0.63088076792959036,
-     0.71484657055254153,
-    -0.23037781330885523,
-];
+const fn reversed(f: [f64; 8]) -> [f64; 8] {
+    let mut out = [0.0; 8];
+    let mut k = 0;
+    while k < 8 {
+        out[k] = f[7 - k];
+        k += 1;
+    }
+    out
+}
+
+/// `out[k] = (-1)^k * f[k]`
+const fn alternate_signs(f: [f64; 8]) -> [f64; 8] {
+    let mut out = f;
+    let mut k = 1;
+    while k < 8 {
+        out[k] = -f[k];
+        k += 2;
+    }
+    out
+}
 
 const FILTER_LEN: usize = 8;
 
@@ -201,15 +193,10 @@ fn boundary_contamination(level: usize) -> usize {
 pub struct StreamingWavelet {
     level: usize,
     frame_size: usize,
-    sample_rate: u32,
     overlap: usize,           // = 2 * boundary_contamination
     input_buf: VecDeque<[f64; 2]>,
     output_buf: VecDeque<[f64; 2]>,
-    lc_est: ComplexEstimator,
-    rc_est: ComplexEstimator,
-    ls_est: ComplexEstimator,
-    rs_est: ComplexEstimator,
-    filter_chains: FilterChains,
+    splitter: Splitter,
 }
 
 impl StreamingWavelet {
@@ -221,30 +208,15 @@ impl StreamingWavelet {
         epsilon: f64,
         filter_chains: FilterChains,
     ) -> Self {
-        let bc = boundary_contamination(level);
-        let overlap = 2 * bc;
-        let block_size = frame_size + overlap;
-        // Compute actual number of wavelet coefficients for the block size
-        let num_coeffs = wavedec_num_coeffs(block_size, level);
-
-        let mut input_buf: VecDeque<[f64; 2]> = VecDeque::new();
-        // Pre-load overlap zeros
-        for _ in 0..overlap {
-            input_buf.push_back([0.0, 0.0]);
-        }
-
+        let overlap = 2 * boundary_contamination(level);
+        let num_coeffs = wavedec_num_coeffs(frame_size + overlap, level);
         Self {
             level,
             frame_size,
-            sample_rate,
             overlap,
-            input_buf,
+            input_buf: VecDeque::from(vec![[0.0, 0.0]; overlap]), // pre-load overlap zeros
             output_buf: VecDeque::new(),
-            lc_est: ComplexEstimator::new(smoothing_alpha, epsilon, num_coeffs),
-            rc_est: ComplexEstimator::new(smoothing_alpha, epsilon, num_coeffs),
-            ls_est: ComplexEstimator::new(smoothing_alpha, epsilon, num_coeffs),
-            rs_est: ComplexEstimator::new(smoothing_alpha, epsilon, num_coeffs),
-            filter_chains,
+            splitter: Splitter::new(smoothing_alpha, epsilon, num_coeffs, sample_rate, filter_chains),
         }
     }
 
@@ -252,94 +224,33 @@ impl StreamingWavelet {
         let block_size = self.frame_size + self.overlap;
         let bc = self.overlap / 2;
 
-        // Extract block
-        let block: Vec<[f64; 2]> = self.input_buf.iter().take(block_size).copied().collect();
+        // Wavelet decompose each channel of the block
+        let channel = |c: usize| -> Vec<f64> { self.input_buf.iter().take(block_size).map(|s| s[c]).collect() };
+        let left_coeffs = wavedec(&channel(0), self.level);
+        let right_coeffs = wavedec(&channel(1), self.level);
+        let band_lens: Vec<usize> = left_coeffs.iter().map(Vec::len).collect();
 
-        let left_signal: Vec<f64> = block.iter().map(|s| s[0]).collect();
-        let right_signal: Vec<f64> = block.iter().map(|s| s[1]).collect();
-
-        // Wavelet decompose each channel
-        let left_coeffs = wavedec(&left_signal, self.level);
-        let right_coeffs = wavedec(&right_signal, self.level);
-
-        // Flatten coefficients
-        let left_flat: Vec<f64> = left_coeffs.iter().flat_map(|v| v.iter().copied()).collect();
-        let right_flat: Vec<f64> = right_coeffs.iter().flat_map(|v| v.iter().copied()).collect();
-
-        // Wrap real coefficients as complex (zero imaginary part)
-        let left_complex: Vec<Complex<f64>> = left_flat.iter().map(|&x| Complex::new(x, 0.0)).collect();
-        let right_complex: Vec<Complex<f64>> = right_flat.iter().map(|&x| Complex::new(x, 0.0)).collect();
-
-        // Compute matched-magnitude complex prototypes
-        let center_proto = center_prototype(&left_complex, &right_complex);
-        let surround_proto = surround_prototype(&left_complex, &right_complex);
-
-        // Run estimators
-        let lc_complex = self.lc_est.estimate(&center_proto, &left_complex).to_vec();
-        let rc_complex = self.rc_est.estimate(&center_proto, &right_complex).to_vec();
-        let ls_complex = self.ls_est.estimate(&surround_proto, &left_complex).to_vec();
-        let rs_complex = self.rs_est.estimate(&surround_proto, &right_complex).to_vec();
-
-        // Convert back to real
-        let lc_flat: Vec<f64> = lc_complex.iter().map(|c| c.re).collect();
-        let rc_flat: Vec<f64> = rc_complex.iter().map(|c| c.re).collect();
-        let ls_flat: Vec<f64> = ls_complex.iter().map(|c| c.re).collect();
-        let rs_flat: Vec<f64> = rs_complex.iter().map(|c| c.re).collect();
-
-        // Residuals
-        let lo_flat: Vec<f64> = left_flat.iter().zip(lc_flat.iter()).zip(ls_flat.iter())
-            .map(|((l, lc), ls)| l - lc - ls).collect();
-        let ro_flat: Vec<f64> = right_flat.iter().zip(rc_flat.iter()).zip(rs_flat.iter())
-            .map(|((r, rc), rs)| r - rc - rs).collect();
-
-        // Apply filter chains to each contribution's real coefficient array
-        let soloed: Vec<String> = self.filter_chains
-            .iter()
-            .filter(|(_, chain)| chain.iter().any(|spec| matches!(spec, FilterSpec::Solo)))
-            .map(|(name, _)| name.clone())
-            .collect();
-
-        let default_chain = vec![FilterSpec::Unity];
-        let sample_rate = self.sample_rate;
-
-        let get_chain = |name: &str| -> &[FilterSpec] {
-            self.filter_chains.get(name).map(|v| v.as_slice()).unwrap_or(default_chain.as_slice())
+        // Flatten the real coefficients and wrap them as complex (zero imaginary part)
+        let as_complex = |bands: &[Vec<f64>]| -> Vec<Complex<f64>> {
+            bands.iter().flatten().map(|&x| Complex::new(x, 0.0)).collect()
         };
+        let contributions = self.splitter.split(&as_complex(&left_coeffs), &as_complex(&right_coeffs));
 
-        let lc_scaled = crate::filters::apply_chain_to_real_signal(&lc_flat, get_chain("Lc"), sample_rate, &soloed, "Lc");
-        let rc_scaled = crate::filters::apply_chain_to_real_signal(&rc_flat, get_chain("Rc"), sample_rate, &soloed, "Rc");
-        let lo_scaled = crate::filters::apply_chain_to_real_signal(&lo_flat, get_chain("Lo"), sample_rate, &soloed, "Lo");
-        let ro_scaled = crate::filters::apply_chain_to_real_signal(&ro_flat, get_chain("Ro"), sample_rate, &soloed, "Ro");
-        let ls_scaled = crate::filters::apply_chain_to_real_signal(&ls_flat, get_chain("Ls"), sample_rate, &soloed, "Ls");
-        let rs_scaled = crate::filters::apply_chain_to_real_signal(&rs_flat, get_chain("Rs"), sample_rate, &soloed, "Rs");
-
-        // Combine contributions per channel
-        let left_out_flat: Vec<f64> = lc_scaled.iter().zip(lo_scaled.iter()).zip(ls_scaled.iter())
-            .map(|((lc, lo), ls)| lc + lo + ls).collect();
-        let right_out_flat: Vec<f64> = rc_scaled.iter().zip(ro_scaled.iter()).zip(rs_scaled.iter())
-            .map(|((rc, ro), rs)| rc + ro + rs).collect();
-
-        // Reshape flat coefficients back into band structure
-        let band_lens: Vec<usize> = left_coeffs.iter().map(|v| v.len()).collect();
-        let left_bands = unflatten_coeffs(&left_out_flat, &band_lens);
-        let right_bands = unflatten_coeffs(&right_out_flat, &band_lens);
-
-        // Reconstruct time-domain signals
-        let left_recon = waverec(&left_bands, block_size);
-        let right_recon = waverec(&right_bands, block_size);
-
-        // Discard boundary contamination (first bc and last bc samples)
-        let valid_start = bc;
-        let valid_end = block_size - bc;
-
-        for i in valid_start..valid_end {
-            self.output_buf.push_back([left_recon[i], right_recon[i]]);
+        // Filter each contribution's real coefficient array and sum per channel
+        let num_coeffs = band_lens.iter().sum();
+        let mut out_flat = [vec![0.0; num_coeffs], vec![0.0; num_coeffs]];
+        for (i, (name, coeffs)) in CONTRIBUTIONS.iter().zip(contributions).enumerate() {
+            let real: Vec<f64> = coeffs.iter().map(|c| c.re).collect();
+            for (out, c) in out_flat[i % 2].iter_mut().zip(self.splitter.filter_real(name, &real)) {
+                *out += c;
+            }
         }
 
-        // Advance input_buf by frame_size
-        for _ in 0..self.frame_size {
-            self.input_buf.pop_front();
-        }
+        // Reconstruct and discard boundary contamination (first bc and last bc samples)
+        let [left_recon, right_recon] =
+            out_flat.map(|flat| waverec(&unflatten_coeffs(&flat, &band_lens), block_size));
+        self.output_buf.extend((bc..block_size - bc).map(|i| [left_recon[i], right_recon[i]]));
+        self.input_buf.drain(..self.frame_size);
     }
 }
 
@@ -356,29 +267,17 @@ fn unflatten_coeffs(flat: &[f64], band_lens: &[usize]) -> Vec<Vec<f64>> {
 
 impl Transform for StreamingWavelet {
     fn process_block(&mut self, input: &[[f64; 2]]) -> Vec<[f64; 2]> {
-        for &sample in input {
-            self.input_buf.push_back(sample);
-        }
-
-        let block_size = self.frame_size + self.overlap;
-        while self.input_buf.len() >= block_size {
+        self.input_buf.extend(input);
+        while self.input_buf.len() >= self.frame_size + self.overlap {
             self.process_block_internal();
         }
-
         self.output_buf.drain(..).collect()
     }
 
     fn reset(&mut self) {
-        self.input_buf.clear();
+        self.input_buf = VecDeque::from(vec![[0.0, 0.0]; self.overlap]);
         self.output_buf.clear();
-        // Pre-load overlap zeros
-        for _ in 0..self.overlap {
-            self.input_buf.push_back([0.0, 0.0]);
-        }
-        self.lc_est.reset();
-        self.rc_est.reset();
-        self.ls_est.reset();
-        self.rs_est.reset();
+        self.splitter.reset();
     }
 }
 
@@ -392,7 +291,7 @@ mod tests {
     const FRAME_SIZE: usize = 512;
 
     #[test]
-    fn eq_chain_scalar_does_not_panic_for_wavelet_path() {
+    fn eq_does_not_panic_for_wavelet_path() {
         use crate::filters::FilterSpec;
 
         let mut chains = crate::filters::unity_chains();
@@ -507,38 +406,7 @@ mod tests {
     }
 
     fn run_wav_round_trip(path: &str) {
-        let mut reader = hound::WavReader::open(path)
-            .unwrap_or_else(|e| panic!("could not open {path}: {e}"));
-        let spec = reader.spec();
-        let num_channels = spec.channels as usize;
-        assert!(num_channels <= 2, "expected mono or stereo WAV");
-
-        let scale = match spec.sample_format {
-            hound::SampleFormat::Float => 1.0_f64,
-            hound::SampleFormat::Int => {
-                1.0 / (1_i64
-                    .checked_shl(spec.bits_per_sample as u32 - 1)
-                    .unwrap_or(1) as f64)
-            }
-        };
-
-        let raw_samples: Vec<f64> = match spec.sample_format {
-            hound::SampleFormat::Float => reader
-                .samples::<f32>()
-                .map(|s| s.expect("read error") as f64)
-                .collect(),
-            hound::SampleFormat::Int => reader
-                .samples::<i32>()
-                .map(|s| s.expect("read error") as f64 * scale)
-                .collect(),
-        };
-
-        let signal: Vec<[f64; 2]> = if num_channels == 2 {
-            raw_samples.chunks(2).map(|c| [c[0], c[1]]).collect()
-        } else {
-            raw_samples.iter().map(|&s| [s, s]).collect()
-        };
-
+        let (_, signal) = crate::load_wav_stereo(path).unwrap_or_else(|e| panic!("could not open {path}: {e}"));
         let num_samples = signal.len();
         let mut wav = make_wavelet();
         let mut all_output: Vec<[f64; 2]> = Vec::new();

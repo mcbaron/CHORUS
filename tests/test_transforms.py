@@ -4,9 +4,9 @@ import math
 
 import numpy as np
 import pytest
-import soundfile as sf
 
 from chorus.core import ChorusConfig, ChorusProcessor
+from chorus.io import read_stereo_wav
 from chorus.transforms import FrFTTransform, STFTConfig, STFTTransform, WaveletTransform
 
 WAV_FILES = [
@@ -16,10 +16,7 @@ WAV_FILES = [
 
 
 def _load_wav_stereo(wav_path: str) -> np.ndarray:
-    audio, _ = sf.read(wav_path, dtype="float64")
-    if audio.ndim == 1:
-        audio = np.column_stack([audio, audio])
-    return audio
+    return read_stereo_wav(wav_path)[1]
 
 
 def test_stft_round_trip_pass_through_stereo(stereo_identical: np.ndarray) -> None:
