@@ -236,19 +236,19 @@ impl StreamingWavelet {
         };
         let contributions = self.splitter.split(&as_complex(&left_coeffs), &as_complex(&right_coeffs));
 
-        // Filter each contribution's real coefficient array and sum per channel
-        let num_coeffs = band_lens.iter().sum();
-        let mut out_flat = [vec![0.0; num_coeffs], vec![0.0; num_coeffs]];
+        // Reconstruct each contribution as audio, filter it, and sum per channel.
+        // Filters act on audio, not on coefficients (an EQ curve has no meaning there).
+        let mut recon = [vec![0.0; block_size], vec![0.0; block_size]];
         for (i, (name, coeffs)) in CONTRIBUTIONS.iter().zip(contributions).enumerate() {
             let real: Vec<f64> = coeffs.iter().map(|c| c.re).collect();
-            for (out, c) in out_flat[i % 2].iter_mut().zip(self.splitter.filter_real(name, &real)) {
-                *out += c;
+            let audio = waverec(&unflatten_coeffs(&real, &band_lens), block_size);
+            for (out, s) in recon[i % 2].iter_mut().zip(self.splitter.filter_real(name, &audio)) {
+                *out += s;
             }
         }
 
-        // Reconstruct and discard boundary contamination (first bc and last bc samples)
-        let [left_recon, right_recon] =
-            out_flat.map(|flat| waverec(&unflatten_coeffs(&flat, &band_lens), block_size));
+        // Discard boundary contamination (first bc and last bc samples)
+        let [left_recon, right_recon] = recon;
         self.output_buf.extend((bc..block_size - bc).map(|i| [left_recon[i], right_recon[i]]));
         self.input_buf.drain(..self.frame_size);
     }
@@ -291,38 +291,25 @@ mod tests {
     const FRAME_SIZE: usize = 512;
 
     #[test]
-    fn eq_does_not_panic_for_wavelet_path() {
+    fn eq_highpass_acts_on_audio_not_coefficients() {
         use crate::filters::FilterSpec;
-
-        let mut chains = crate::filters::unity_chains();
-        chains.insert("Lo".to_string(), vec![
-            FilterSpec::Eq { mode: "highpass".to_string(), frequency_hz: 1000.0, q: 0.707, gain_db: Some(0.0) }
-        ]);
-        chains.insert("Lc".to_string(), vec![FilterSpec::Mute]);
-        chains.insert("Ls".to_string(), vec![FilterSpec::Mute]);
-
-        let sample_rate_f64 = 48_000.0;
-        let num_samples = 2048;
-        let signal: Vec<[f64; 2]> = (0..num_samples)
-            .map(|i| {
-                let t = i as f64 / sample_rate_f64;
-                let v = (2.0 * std::f64::consts::PI * 440.0 * t).sin();
-                [v, v]
-            })
-            .collect();
-
-        let mut wav = StreamingWavelet::new(LEVEL, FRAME_SIZE, 48_000, 0.0, 1e-12, chains);
-        let mut all_output: Vec<[f64; 2]> = Vec::new();
-        for chunk in signal.chunks(FRAME_SIZE) {
-            all_output.extend(wav.process_block(chunk));
-        }
-        let flush = vec![[0.0_f64; 2]; FRAME_SIZE * 4];
-        all_output.extend(wav.process_block(&flush));
-
-        assert!(
-            all_output.iter().all(|s| s[0].is_finite() && s[1].is_finite()),
-            "Wavelet EQ output contains non-finite values"
-        );
+        // A left-only tone goes to Lo. A 2nd-order 1 kHz high-pass must cut 100 Hz by ~40 dB
+        // and pass 5 kHz.
+        let gain_db = |freq: f64| {
+            let mut chains = unity_chains();
+            chains.insert("Lo".into(), vec![FilterSpec::Eq { mode: "highpass".into(), frequency_hz: 1000.0, q: 0.707, gain_db: None }]);
+            let mut wav = StreamingWavelet::new(LEVEL, FRAME_SIZE, 48_000, 0.0, 1e-12, chains);
+            let input: Vec<[f64; 2]> = (0..48_000)
+                .map(|i| [(2.0 * std::f64::consts::PI * freq * i as f64 / 48_000.0).sin(), 0.0])
+                .collect();
+            let output = wav.process_block(&input);
+            let energy = |x: &[[f64; 2]]| x[4096..40_000].iter().map(|s| s[0] * s[0]).sum::<f64>();
+            10.0 * (energy(&output) / energy(&input)).log10()
+        };
+        let low = gain_db(100.0);
+        let high = gain_db(5000.0);
+        assert!(low < -30.0, "100 Hz gain {low:.1} dB, expected < -30 dB");
+        assert!(high.abs() < 1.0, "5 kHz gain {high:.1} dB, expected about 0 dB");
     }
 
     fn make_wavelet() -> StreamingWavelet {
