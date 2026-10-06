@@ -83,7 +83,8 @@ impl Splitter {
         let lc = lc_est.estimate(&center, left).to_vec();
         let rc = rc_est.estimate(&center, right).to_vec();
         let ls = ls_est.estimate(&surround, left).to_vec();
-        let rs = rs_est.estimate(&surround, right).to_vec();
+        // S is in phase with L, so its estimate from R has the opposite sign of R. Negate it.
+        let rs: Vec<Complex<f64>> = rs_est.estimate(&surround, right).iter().map(|c| -c).collect();
         let lo = (0..left.len()).map(|k| left[k] - lc[k] - ls[k]).collect();
         let ro = (0..right.len()).map(|k| right[k] - rc[k] - rs[k]).collect();
         [lc, rc, lo, ro, ls, rs]
@@ -153,6 +154,21 @@ mod tests {
         // second != fresh_first (state was carried over from first call, affecting second)
         assert!((second[0].re - fresh_first[0].re).abs() > 1e-9,
             "second call with state should differ from fresh estimator with same input: {} != {}", second[0].re, fresh_first[0].re);
+    }
+
+    #[test]
+    fn opposite_polarity_goes_to_surround_with_input_sign() {
+        // L = x, R = -x: all of it is surround, so Ls = L, Rs = R, and Lo = Ro = 0.
+        let left: Vec<Complex<f64>> = vec![Complex::new(1.0, 0.5), Complex::new(-2.0, 0.25)];
+        let right: Vec<Complex<f64>> = left.iter().map(|c| -c).collect();
+        let mut splitter = super::Splitter::new(0.0, 1e-12, 2, 48_000, crate::filters::unity_chains());
+        let [lc, rc, lo, ro, ls, rs] = splitter.split(&left, &right);
+        for k in 0..2 {
+            for (got, want) in [(lc[k], 0.0 * left[k]), (rc[k], 0.0 * right[k]), (lo[k], 0.0 * left[k]),
+                                (ro[k], 0.0 * right[k]), (ls[k], left[k]), (rs[k], right[k])] {
+                approx::assert_abs_diff_eq!((got - want).norm(), 0.0, epsilon = 1e-12);
+            }
+        }
     }
 
     #[test]
