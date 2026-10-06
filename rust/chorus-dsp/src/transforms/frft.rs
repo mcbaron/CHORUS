@@ -5,7 +5,7 @@ use rustfft::FftPlanner;
 
 use crate::estimation::Splitter;
 use crate::filters::{FilterChains, CONTRIBUTIONS};
-use crate::transforms::Transform;
+use crate::transforms::{sqrt_hann, Transform};
 
 /// Streaming Fractional Fourier Transform processor.
 ///
@@ -27,11 +27,15 @@ use crate::transforms::Transform;
 /// - `order = 0` → identity (pass-through)
 /// - `order = 1` → plain FFT (forward) / plain IFFT·N (inverse)
 ///
-/// Streaming model: hop_size = frame_size (no overlap). Filter chains apply to
-/// each contribution in the time domain, after the inverse FrFT.
+/// Streaming model: sqrt-Hann analysis and synthesis windows with 50% overlap-add,
+/// as in the Python reference. Filter chains apply to each contribution in the
+/// time domain, after the inverse FrFT and before the synthesis window.
 pub struct StreamingFrft {
     order: f64,
     frame_size: usize,
+    window: Vec<f64>,
+    overlap: Vec<[f64; 2]>,
+    discard_hop: bool, // true until the first (zero-padded) hop is dropped
     chirp: Vec<Complex<f64>>,
     norm: Complex<f64>,
     input_buf: VecDeque<[f64; 2]>,
@@ -63,9 +67,13 @@ impl StreamingFrft {
         Self {
             order,
             frame_size,
+            window: sqrt_hann(frame_size),
+            overlap: vec![[0.0, 0.0]; frame_size / 2],
+            discard_hop: true,
             chirp,
             norm,
-            input_buf: VecDeque::new(),
+            // One hop of zeros first, as in the Python reference (see StreamingStft).
+            input_buf: VecDeque::from(vec![[0.0, 0.0]; frame_size / 2]),
             output_buf: VecDeque::new(),
             splitter: Splitter::new(smoothing_alpha, epsilon, frame_size, sample_rate, filter_chains),
             fft,
@@ -129,21 +137,30 @@ impl StreamingFrft {
             .collect()
     }
 
-    fn process_frame(&mut self) {
-        let n = self.frame_size;
-        let left: Vec<f64> = self.input_buf.iter().take(n).map(|s| s[0]).collect();
-        let right: Vec<f64> = self.input_buf.iter().take(n).map(|s| s[1]).collect();
+    // ponytail: same OLA loop as StreamingStft::process_hop. Share it if a third OLA transform appears.
+    fn process_hop(&mut self) {
+        let hop = self.frame_size / 2;
+        let windowed = |c: usize| -> Vec<f64> {
+            self.input_buf.iter().zip(&self.window).map(|(s, w)| s[c] * w).collect()
+        };
+        let (left, right) = (windowed(0), windowed(1));
         let contributions = self.splitter.split(&self.frft_transform(&left), &self.frft_transform(&right));
 
-        let mut out_frame: Vec<[f64; 2]> = vec![[0.0, 0.0]; n];
+        let mut out_frame: Vec<[f64; 2]> = vec![[0.0, 0.0]; self.frame_size];
         for (i, (name, bins)) in CONTRIBUTIONS.iter().zip(contributions).enumerate() {
             let time_signal = self.splitter.filter_real(name, &self.ifrft_transform(&bins));
-            for (out, t) in out_frame.iter_mut().zip(&time_signal) {
-                out[i % 2] += t;
+            for ((out, t), w) in out_frame.iter_mut().zip(&time_signal).zip(&self.window) {
+                out[i % 2] += t * w;
             }
         }
-        self.output_buf.extend(out_frame);
-        self.input_buf.drain(..n);
+        for (out, tail) in out_frame.iter_mut().zip(&self.overlap) {
+            out[0] += tail[0];
+            out[1] += tail[1];
+        }
+        let start = if std::mem::take(&mut self.discard_hop) { hop } else { 0 };
+        self.output_buf.extend(&out_frame[start..hop]);
+        self.overlap = out_frame[hop..].to_vec();
+        self.input_buf.drain(..hop);
     }
 }
 
@@ -151,14 +168,16 @@ impl Transform for StreamingFrft {
     fn process_block(&mut self, input: &[[f64; 2]]) -> Vec<[f64; 2]> {
         self.input_buf.extend(input);
         while self.input_buf.len() >= self.frame_size {
-            self.process_frame();
+            self.process_hop();
         }
         self.output_buf.drain(..).collect()
     }
 
     fn reset(&mut self) {
-        self.input_buf.clear();
+        self.input_buf = VecDeque::from(vec![[0.0, 0.0]; self.frame_size / 2]);
         self.output_buf.clear();
+        self.overlap.fill([0.0, 0.0]);
+        self.discard_hop = true;
         self.splitter.reset();
     }
 }
@@ -193,14 +212,15 @@ mod tests {
     #[test]
     fn identity_at_order_zero() {
         let mut frft = make_frft(0.0);
-        let signal: Vec<[f64; 2]> = (0..FRAME_SIZE)
+        let signal: Vec<[f64; 2]> = (0..4 * FRAME_SIZE)
             .map(|i| [i as f64 * 0.001, i as f64 * 0.002])
             .collect();
 
+        // OLA: one hop out per hop in after the first frame. The first hop has no overlap partner.
         let output = frft.process_block(&signal);
-        assert_eq!(output.len(), FRAME_SIZE);
+        assert_eq!(output.len(), 7 * FRAME_SIZE / 2);
 
-        for (i, (out, inp)) in output.iter().zip(signal.iter()).enumerate() {
+        for (i, (out, inp)) in output.iter().zip(signal.iter()).enumerate().skip(FRAME_SIZE / 2) {
             assert!(
                 (out[0] - inp[0]).abs() < 1e-10,
                 "left mismatch at {i}: got {}, expected {}",
@@ -238,6 +258,19 @@ mod tests {
 
     /// Test 3: Round-trip at order=0.5 — FrFT then inverse FrFT reconstructs input within 1e-6.
     #[test]
+    fn first_hop_reconstructs_input() {
+        // The first frame starts one hop before the input, as in the Python reference,
+        // so the first output hop gets both overlapping frames.
+        let mut t = make_frft(0.5);
+        let input: Vec<[f64; 2]> = (0..4096).map(|i| [(i as f64 * 0.01).sin(), (i as f64 * 0.02).cos()]).collect();
+        let output = t.process_block(&input);
+        for i in 0..512 {
+            assert!((output[i][0] - input[i][0]).abs() < 1e-9, "left mismatch at {i}");
+            assert!((output[i][1] - input[i][1]).abs() < 1e-9, "right mismatch at {i}");
+        }
+    }
+
+    #[test]
     fn round_trip_at_order_half() {
         let frft = make_frft(0.5);
 
@@ -266,18 +299,18 @@ mod tests {
         let mut frft = StreamingFrft::new(0.5, FRAME_SIZE, 48_000, 0.0, 1e-12, chains);
         let input: Vec<[f64; 2]> = (0..4 * FRAME_SIZE).map(|i| [(i as f64 * 0.01).sin(), 0.0]).collect();
         let output = frft.process_block(&input);
-        assert_eq!(output.len(), input.len());
+        assert_eq!(output.len(), 7 * FRAME_SIZE / 2);
         assert!(output.iter().all(|s| s[0].is_finite() && s[1].is_finite()));
     }
 
     #[test]
     fn process_block_identity_order_zero() {
         let mut frft = make_frft(0.0);
-        let signal = generate_sine(FRAME_SIZE, 440.0, 48000.0);
+        let signal = generate_sine(4 * FRAME_SIZE, 440.0, 48000.0);
         let output = frft.process_block(&signal);
-        assert_eq!(output.len(), FRAME_SIZE);
+        assert_eq!(output.len(), 7 * FRAME_SIZE / 2);
 
-        for (i, (out, inp)) in output.iter().zip(signal.iter()).enumerate() {
+        for (i, (out, inp)) in output.iter().zip(signal.iter()).enumerate().skip(FRAME_SIZE / 2) {
             assert!((out[0] - inp[0]).abs() < 1e-10, "left mismatch at {i}");
             assert!((out[1] - inp[1]).abs() < 1e-10, "right mismatch at {i}");
         }

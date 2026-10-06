@@ -22,30 +22,50 @@ fn assert_close(actual: &[[f64; 2]], expected: &[[f64; 2]], tolerance: f64) {
     }
 }
 
+/// Run one stem: mute every contribution outside `keep`.
+fn run_stem(input: &[[f64; 2]], transform: &chorus_dsp::TransformKind, keep: [&str; 2]) -> Vec<[f64; 2]> {
+    use chorus_dsp::filters::{unity_chains, FilterSpec};
+    let mut chains = unity_chains();
+    for name in ["Lc", "Rc", "Lo", "Ro", "Ls", "Rs"] {
+        if !keep.contains(&name) {
+            chains.insert(name.to_string(), vec![FilterSpec::Mute]);
+        }
+    }
+    let config = DspConfig { transform: transform.clone(), filter_chains: chains, ..DspConfig::default() };
+    ChorusDsp::new(config).process(input).unwrap()
+}
+
 #[test]
-fn rust_matches_python_frft_fixture() {
+fn rust_stems_match_python_fixtures() {
     use chorus_dsp::TransformKind;
-    let input = load_stereo("frft_unity_bypass.input.npy");
-    let config = DspConfig {
-        transform: TransformKind::Frft {
-            order: 0.5,
-            frame_size: 1024,
-            smoothing_alpha: 0.0,
-        },
-        ..DspConfig::default()
-    };
-    let mut dsp = ChorusDsp::new(config);
-    let output = dsp.process(&input).unwrap();
-    let expected = load_stereo("frft_unity_bypass.center.npy");
-    let skip = 1024;
-    let compare_len = output.len().min(input.len()).saturating_sub(skip);
-    assert!(compare_len > 0, "not enough output samples to compare after warm-up skip");
-    assert_close(&output[skip..skip + compare_len], &expected[skip..skip + compare_len], 1e-6);
+    let stft = TransformKind::Stft { frame_size: 1024, hop_size: 512, smoothing_alpha: 0.0 };
+    let frft = TransformKind::Frft { order: 0.5, frame_size: 1024, smoothing_alpha: 0.0 };
+    let cases = [
+        ("center_dominant", &stft),
+        ("hard_panned_left", &stft),
+        ("hard_panned_right", &stft),
+        ("phase_inverted_surround", &stft),
+        ("unity_bypass", &stft),
+        ("silence", &stft),
+        ("near_silence", &stft),
+        ("frft_unity_bypass", &frft),
+    ];
+    for (case_name, transform) in cases {
+        let input = load_stereo(&format!("{case_name}.input.npy"));
+        for (stem, keep) in [("center", ["Lc", "Rc"]), ("only", ["Lo", "Ro"]), ("surround", ["Ls", "Rs"])] {
+            let output = run_stem(&input, transform, keep);
+            let expected = load_stereo(&format!("{case_name}.{stem}.npy"));
+            let end = output.len().min(expected.len());
+            assert!(end > 0, "{case_name}.{stem}: no output");
+            assert_close(&output[..end], &expected[..end], 1e-9);
+        }
+    }
 }
 
 #[test]
 fn rust_matches_python_known_eq_preset_fixture() {
     use chorus_dsp::filters::{unity_chains, FilterSpec};
+    use chorus_dsp::TransformKind;
 
     // Build filter chains: Lc → Gain(-6 dB), Lo → Eq(highpass, 120 Hz, Q=0.707), Rs → Polarity
     let mut filter_chains = unity_chains();
@@ -60,6 +80,7 @@ fn rust_matches_python_known_eq_preset_fixture() {
 
     let config = DspConfig {
         filter_chains,
+        transform: TransformKind::Stft { frame_size: 1024, hop_size: 512, smoothing_alpha: 0.0 },
         ..DspConfig::default()
     };
 

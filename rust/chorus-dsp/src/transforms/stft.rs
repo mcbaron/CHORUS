@@ -5,7 +5,7 @@ use rustfft::FftPlanner;
 
 use crate::estimation::Splitter;
 use crate::filters::{FilterChains, CONTRIBUTIONS};
-use crate::transforms::Transform;
+use crate::transforms::{sqrt_hann, Transform};
 
 pub struct StreamingStft {
     frame_size: usize,
@@ -14,6 +14,7 @@ pub struct StreamingStft {
     input_buf: VecDeque<[f64; 2]>,
     output_buf: VecDeque<[f64; 2]>,
     overlap: Vec<[f64; 2]>,
+    discard_hop: bool, // true until the first (zero-padded) hop is dropped
     splitter: Splitter,
     fft: Arc<dyn rustfft::Fft<f64>>,
     ifft: Arc<dyn rustfft::Fft<f64>>,
@@ -28,15 +29,6 @@ impl StreamingStft {
         epsilon: f64,
         filter_chains: FilterChains,
     ) -> Self {
-        // Precompute sqrt-Hann window using N (not N-1) denominator for exact OLA
-        // at 50% overlap: w[n]^2 + w[n+N/2]^2 = 1 for all n when denominator = N.
-        let window: Vec<f64> = (0..frame_size)
-            .map(|n| {
-                let hann = 0.5 * (1.0 - (2.0 * std::f64::consts::PI * n as f64 / frame_size as f64).cos());
-                hann.sqrt()
-            })
-            .collect();
-
         let num_bins = frame_size / 2 + 1;
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(frame_size);
@@ -45,10 +37,13 @@ impl StreamingStft {
         Self {
             frame_size,
             hop_size,
-            window,
-            input_buf: VecDeque::new(),
+            window: sqrt_hann(frame_size),
+            // One hop of zeros first, so the first frame starts one hop before the input,
+            // as in the Python reference. The first output hop is then dropped.
+            input_buf: VecDeque::from(vec![[0.0, 0.0]; hop_size]),
             output_buf: VecDeque::new(),
             overlap: vec![[0.0, 0.0]; frame_size - hop_size],
+            discard_hop: true,
             splitter: Splitter::new(smoothing_alpha, epsilon, num_bins, sample_rate, filter_chains),
             fft,
             ifft,
@@ -108,7 +103,8 @@ impl StreamingStft {
         }
 
         // Emit hop_size samples, keep the rest as the next overlap, and advance the input.
-        self.output_buf.extend(&out_frame[..hop_size]);
+        let start = if std::mem::take(&mut self.discard_hop) { hop_size } else { 0 };
+        self.output_buf.extend(&out_frame[start..hop_size]);
         self.overlap = out_frame[hop_size..].to_vec();
         self.input_buf.drain(..hop_size);
     }
@@ -124,9 +120,10 @@ impl Transform for StreamingStft {
     }
 
     fn reset(&mut self) {
-        self.input_buf.clear();
+        self.input_buf = VecDeque::from(vec![[0.0, 0.0]; self.hop_size]);
         self.output_buf.clear();
         self.overlap.fill([0.0, 0.0]);
+        self.discard_hop = true;
         self.splitter.reset();
     }
 }
@@ -152,6 +149,19 @@ mod tests {
                 [v, v]
             })
             .collect()
+    }
+
+    #[test]
+    fn first_hop_reconstructs_input() {
+        // The first frame starts one hop before the input, as in the Python reference,
+        // so the first output hop gets both overlapping frames.
+        let mut t = make_stft();
+        let input: Vec<[f64; 2]> = (0..4096).map(|i| [(i as f64 * 0.01).sin(), (i as f64 * 0.02).cos()]).collect();
+        let output = t.process_block(&input);
+        for i in 0..512 {
+            assert!((output[i][0] - input[i][0]).abs() < 1e-9, "left mismatch at {i}");
+            assert!((output[i][1] - input[i][1]).abs() < 1e-9, "right mismatch at {i}");
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 /// chorus_split: process a stereo WAV through ChorusDsp and write center/only/surround stems.
 ///
-/// Usage: chorus_split <input.wav> <output_dir> [--transform stft|wavelet|frft]
+/// Usage: chorus_split <input.wav> <output_dir> [--transform stft|wavelet|frft] [--smoothing-alpha A]
 ///
 /// Runs 3 passes with contribution muting to isolate each stem. The estimators
 /// are unaffected by output muting (they depend only on input + prototypes), so
@@ -52,33 +52,39 @@ fn run_pass(input: &[[f64; 2]], config: DspConfig) -> Vec<[f64; 2]> {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        eprintln!("Usage: chorus_split <input.wav> <output_dir> [--transform stft|wavelet|frft]");
+        eprintln!("Usage: chorus_split <input.wav> <output_dir> [--transform stft|wavelet|frft] [--smoothing-alpha A]");
         std::process::exit(1);
     }
 
     let input_path = PathBuf::from(&args[1]);
     let output_dir = PathBuf::from(&args[2]);
 
-    let transform_name = args.windows(2)
-        .find(|w| w[0] == "--transform")
-        .map(|w| w[1].as_str())
-        .unwrap_or("stft");
+    let flag = |name: &str| args.windows(2).find(|w| w[0] == name).map(|w| w[1].clone());
+    let transform_name = flag("--transform");
+    let smoothing_alpha: f64 = match flag("--smoothing-alpha").map(|v| v.parse::<f64>()) {
+        None => 0.9,
+        Some(Ok(a)) if (0.0..1.0).contains(&a) => a,
+        Some(_) => {
+            eprintln!("--smoothing-alpha must be a number in [0, 1)");
+            std::process::exit(1);
+        }
+    };
 
-    let transform_kind: TransformKind = match transform_name {
-        "wavelet" => TransformKind::Wavelet {
+    let transform_kind: TransformKind = match transform_name.as_deref() {
+        Some("wavelet") => TransformKind::Wavelet {
             level: 3,
             frame_size: 512,
-            smoothing_alpha: 0.0,
+            smoothing_alpha,
         },
-        "frft" => TransformKind::Frft {
+        Some("frft") => TransformKind::Frft {
             order: 0.5,
             frame_size: 1024,
-            smoothing_alpha: 0.0,
+            smoothing_alpha,
         },
         _ => TransformKind::Stft {
             frame_size: 1024,
             hop_size: 512,
-            smoothing_alpha: 0.0,
+            smoothing_alpha,
         },
     };
 

@@ -65,8 +65,9 @@ def test_experimental_frft_adapter_smoke(stereo_identical: np.ndarray) -> None:
 
     assert representation.data.ndim == 3
     assert representation.data.shape[0] == 2
-    assert representation.data.shape[1] == math.ceil(stereo_identical.shape[0] / (1024 // 2)) + 1
-    assert representation.data.shape[2] == 1024
+    # (channel, bin, frame), like STFT: the estimator smooths along the last axis (time).
+    assert representation.data.shape[1] == 1024
+    assert representation.data.shape[2] == math.ceil(stereo_identical.shape[0] / (1024 // 2)) + 1
     assert representation.metadata["experimental"] is True
     assert representation.metadata["transform"] == "frft"
 
@@ -165,7 +166,7 @@ def test_frft_order_one_matches_fft() -> None:
         start = frame_idx * H
         for ch in range(2):
             expected = np.fft.fft(window * padded[start : start + N, ch])
-            np.testing.assert_allclose(rep.data[ch, frame_idx], expected, atol=1e-10)
+            np.testing.assert_allclose(rep.data[ch, :, frame_idx], expected, atol=1e-10)
 
 
 @pytest.mark.parametrize("wav_path", WAV_FILES)
@@ -205,3 +206,4 @@ def test_frft_transform_respects_order_from_config() -> None:
     config = ChorusConfig(sample_rate=48_000, transform="frft", frft_order=0.25, frame_size=1024)
     processor = ChorusProcessor(config)
     assert processor.transform.order == 0.25
+

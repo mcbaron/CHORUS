@@ -9,6 +9,13 @@ pub use stft::StreamingStft;
 pub mod wavelet;
 pub use wavelet::StreamingWavelet;
 
+/// Periodic sqrt-Hann window: w[n]^2 + w[n+N/2]^2 = 1, so 50% overlap-add is exact.
+pub fn sqrt_hann(n: usize) -> Vec<f64> {
+    (0..n)
+        .map(|k| (0.5 - 0.5 * (2.0 * std::f64::consts::PI * k as f64 / n as f64).cos()).sqrt())
+        .collect()
+}
+
 pub trait Transform: Send {
     /// Push one stereo block. Returns processed stereo output samples
     /// when enough output is available; may return empty vec during warm-up.
@@ -41,7 +48,7 @@ impl Default for TransformKind {
         TransformKind::Stft {
             frame_size: 1024,
             hop_size: 512,
-            smoothing_alpha: 0.0,
+            smoothing_alpha: 0.9, // same default as the Python CLI
         }
     }
 }

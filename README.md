@@ -179,9 +179,11 @@ ffmpeg -i song.mp3 song.wav
 ### Rust CLI
 
 The Rust binary uses the streaming core. It writes the three stems but no report.
+For STFT and FrFT, its stems match the Python stems to 3e-8, the precision of a 32-bit
+float WAV file. The wavelet path processes blocks, so its stems differ from Python.
 
 ```bash
-rust/chorus-dsp/target/release/chorus_split song.wav out/song --transform stft
+rust/chorus-dsp/target/release/chorus_split song.wav out/song --transform stft --smoothing-alpha 0.9
 ```
 
 ### Python API
@@ -204,8 +206,8 @@ representation changes.
 
 | Transform | Representation | Max abs residual | Speed (× real time) | Status |
 |---|---|---:|---:|---|
-| **STFT** | 1024-sample sqrt-Hann, 50% overlap | 7.8e-16 | 77× | Reference |
-| **FrFT** | Order 0.5, 1024-sample sqrt-Hann OLA | 1.2e-15 | 28× | Experimental |
+| **STFT** | 1024-sample sqrt-Hann, 50% overlap | 7.8e-16 | 76× | Reference |
+| **FrFT** | Order 0.5, 1024-sample sqrt-Hann OLA | 1.2e-15 | 32× | Experimental |
 | **Wavelet** | Daubechies-4, 3 levels | 8.9e-16 | 2.3× | Experimental |
 
 <sub>Python reference, a 20 s excerpt from each of the six test tracks, 44.1 kHz, Apple M4.
@@ -321,10 +323,10 @@ cargo test --manifest-path rust/chorus-ffi/Cargo.toml               # C ABI
 poetry run python scripts/generate_v2_fixtures.py                   # rebuild fixtures
 ```
 
-The Rust fixture tests use the Python output in `fixtures/v2/`. For silence, near
-silence, unity bypass, center dominant, hard-panned left and right, and phase-inverted
-surround, the tests make sure that the streaming core gives back the input after warm-up.
-For the known EQ preset and the FrFT bypass, the tests also compare the stems.
+The Rust fixture tests use the Python output in `fixtures/v2/`. For each STFT case
+(silence, near silence, unity bypass, center dominant, hard-panned left and right,
+phase-inverted surround) and the FrFT case, each Rust stem must match the Python stem
+to 1e-9 from the first sample.
 
 ## Citing CHORUS
 

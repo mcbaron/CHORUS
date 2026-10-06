@@ -21,6 +21,12 @@ class TransformRepresentation:
     metadata: dict[str, object]
 
 
+def _sqrt_hann(n: int) -> np.ndarray:
+    # Periodic (denominator n), so the squares add to 1 at 50% overlap.
+    # The Rust core uses the same window.
+    return np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * np.arange(n) / n))
+
+
 def _validate_stereo(stereo: np.ndarray) -> np.ndarray:
     array = np.asarray(stereo, dtype=np.float64)
     if array.ndim != 2 or array.shape[1] != 2:
@@ -35,7 +41,7 @@ class STFTTransform:
             raise ValueError("v0 STFT requires frame_size to be positive")
         if self.config.hop_size <= 0:
             raise ValueError("v0 STFT requires hop_size to be positive")
-        window = np.sqrt(np.hanning(self.config.frame_size))
+        window = _sqrt_hann(self.config.frame_size)
         self._stft = ShortTimeFFT(
             win=window,
             hop=self.config.hop_size,
@@ -121,7 +127,7 @@ class FrFTTransform:
         n_samples = stereo.shape[0]
         N = self.frame_size
         H = self.hop_size
-        window = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * np.arange(N) / N))
+        window = _sqrt_hann(N)
 
         n_frames = math.ceil(n_samples / H) + 1
         total_length = (n_frames - 1) * H + N
@@ -129,11 +135,11 @@ class FrFTTransform:
         padded = np.zeros((total_length, 2), dtype=np.float64)
         padded[H : H + n_samples, :] = stereo
 
-        out = np.empty((2, n_frames, N), dtype=complex)
+        out = np.empty((2, N, n_frames), dtype=complex)  # (channel, bin, frame), like STFT
         for ch in range(2):
             for i in range(n_frames):
                 start = i * H
-                out[ch, i] = _frft_1d(window * padded[start : start + N, ch], self.order)
+                out[ch, :, i] = _frft_1d(window * padded[start : start + N, ch], self.order)
 
         return TransformRepresentation(
             data=out,
@@ -152,16 +158,16 @@ class FrFTTransform:
         n_samples = representation.original_shape[0]
         N = self.frame_size
         H = self.hop_size
-        window = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * np.arange(N) / N))
+        window = _sqrt_hann(N)
 
-        n_frames = representation.data.shape[1]
+        n_frames = representation.data.shape[2]
         total_length = (n_frames - 1) * H + N
 
         buf = np.zeros((total_length, 2), dtype=np.float64)
         for ch in range(2):
             for i in range(n_frames):
                 start = i * H
-                frame = _ifrft_1d(representation.data[ch, i], self.order).real
+                frame = _ifrft_1d(representation.data[ch, :, i], self.order).real
                 buf[start : start + N, ch] += window * frame
 
         return buf[H : H + n_samples, :]

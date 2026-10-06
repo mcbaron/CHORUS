@@ -10,6 +10,7 @@ pub struct ComplexEstimator {
     cross: Vec<Complex<f64>>,  // per-coefficient smoothed cross-correlation
     auto: Vec<f64>,            // per-coefficient smoothed auto-correlation
     buf: Vec<Complex<f64>>,    // pre-allocated output buffer
+    seeded: bool,              // false until the first frame sets the state
 }
 
 impl ComplexEstimator {
@@ -20,13 +21,16 @@ impl ComplexEstimator {
             cross: vec![Complex::new(0.0, 0.0); num_coeffs],
             auto: vec![0.0; num_coeffs],
             buf: vec![Complex::new(0.0, 0.0); num_coeffs],
+            seeded: false,
         }
     }
 
     pub fn estimate(&mut self, prototype: &[Complex<f64>], source: &[Complex<f64>]) -> &[Complex<f64>] {
         debug_assert_eq!(prototype.len(), self.cross.len());
         debug_assert_eq!(source.len(), self.cross.len());
-        let alpha = self.alpha;
+        // The first frame sets the state directly, as in the Python reference.
+        let alpha = if self.seeded { self.alpha } else { 0.0 };
+        self.seeded = true;
         let epsilon = self.epsilon;
         for (((cross_k, auto_k), buf_k), (proto_k, src_k)) in self.cross.iter_mut()
             .zip(self.auto.iter_mut())
@@ -47,6 +51,7 @@ impl ComplexEstimator {
         for c in &mut self.cross { *c = Complex::new(0.0, 0.0); }
         for a in &mut self.auto { *a = 0.0; }
         for b in &mut self.buf  { *b = Complex::new(0.0, 0.0); }
+        self.seeded = false;
     }
 }
 
@@ -169,6 +174,17 @@ mod tests {
                 approx::assert_abs_diff_eq!((got - want).norm(), 0.0, epsilon = 1e-12);
             }
         }
+    }
+
+    #[test]
+    fn complex_estimator_seeds_state_with_first_frame() {
+        // Python seeds the smoothed state with the first frame, then smooths.
+        // Frame 2 with alpha=0.5: cross = 0.5*2 + 0.5*1 = 1.5, auto = 0.5*4 + 0.5*1 = 2.5, w = 0.6.
+        let mut est = ComplexEstimator::new(0.5, 1e-12, 1);
+        let one = [Complex::new(1.0, 0.0)];
+        est.estimate(&one, &[Complex::new(2.0, 0.0)]);
+        let second = est.estimate(&one, &one)[0];
+        approx::assert_abs_diff_eq!(second.re, 0.6, epsilon = 1e-12);
     }
 
     #[test]
