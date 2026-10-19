@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
+import struct
+import subprocess
 
 import numpy as np
 import pytest
@@ -190,3 +193,56 @@ def test_cli_split_rejects_invalid_filter_config_before_writing_outputs(
         main(["split", str(input_path), "--out-dir", str(out_dir), "--filters", str(filters_path)])
 
     assert not out_dir.exists()
+
+
+def _mp4_child(data: bytes, start: int, end: int, kind: bytes) -> tuple[int, int]:
+    # First child box of this kind, as Mixxx searches: returns (payload start, box end).
+    while start < end:
+        size, box = struct.unpack_from(">I4s", data, start)
+        if box == kind:
+            return start + 8, start + size
+        start += size
+    raise AssertionError(f"no {kind!r} box")
+
+
+def _decode(path, stream: int) -> np.ndarray:
+    raw = subprocess.check_output(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-map", f"0:a:{stream}", "-f", "f32le", "-"]
+    )
+    return np.frombuffer(raw, np.float32).reshape(-1, 2)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
+def test_stem_mp4_loads_like_mixxx(tmp_path, sample_rate: int) -> None:
+    rng = np.random.default_rng(3)
+    shared = 0.2 * rng.standard_normal(sample_rate)
+    left_only = 0.1 * rng.standard_normal(sample_rate)
+    audio = np.column_stack([shared + left_only, shared])
+    input_path = tmp_path / "song.wav"
+    wavfile.write(input_path, sample_rate, audio.astype(np.float32))
+
+    assert main(["split", str(input_path), "--out-dir", str(tmp_path / "out"), "--stem-mp4"]) == 0
+    stem_file = tmp_path / "out" / "song.stem.mp4"
+
+    probe = json.loads(subprocess.check_output(
+        ["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(stem_file)]
+    ))["streams"]
+    assert [s["codec_type"] for s in probe] == ["audio"] * 5  # the mix, then 4 stems
+    assert {(s["codec_name"], s["sample_rate"], s["channels"]) for s in probe} == {
+        ("alac", str(sample_rate), 2)
+    }
+
+    data = stem_file.read_bytes()
+    moov = _mp4_child(data, 0, len(data), b"moov")
+    udta = _mp4_child(data, *moov, b"udta")
+    manifest = json.loads(data[slice(*_mp4_child(data, *udta, b"stem"))])
+    assert manifest["version"] == 1
+    names = [s["name"] for s in manifest["stems"]]
+    assert names == ["Center", "Left only", "Right only", "Surround"]
+
+    # Mixxx plays the sum of the 4 stems, not the mix. ALAC makes that sum exact to 24 bits.
+    stems = sum(_decode(stem_file, i) for i in range(1, 5))
+    assert stems.shape == audio.shape
+    error_db = 10 * np.log10(np.mean((stems - audio) ** 2) / np.mean(audio**2))
+    assert error_db < -90, f"stems differ from the input by {error_db:.1f} dB"
+    assert np.abs(_decode(stem_file, 3)[:, 0]).max() == 0  # "Right only" has a silent left side

@@ -39,6 +39,7 @@ CHORUS has three parts:
 - [Transform zoo](#transform-zoo)
 - [Results](#results)
 - [Contribution filters](#contribution-filters)
+- [Mixxx stem files](#mixxx-stem-files)
 - [Real-time plugin](#real-time-plugin)
 - [Repository layout](#repository-layout)
 - [Validation](#validation)
@@ -175,6 +176,7 @@ ffmpeg -i song.mp3 song.wav
 | `--smoothing-alpha` | `0.9` | Smoothing $\alpha$ for the estimator, in $[0, 1)$ |
 | `--epsilon` | `1e-9` | Floor for the estimator denominator |
 | `--filters` | none | Path to a JSON filter config. See [Contribution filters](#contribution-filters). |
+| `--stem-mp4` | off | Also write `<input>.stem.mp4` for Mixxx. See [Mixxx stem files](#mixxx-stem-files). |
 
 ### Rust CLI
 
@@ -275,6 +277,29 @@ poetry run chorus split song.wav --out-dir out/song --filters filters.json
 CHORUS validates the config before it writes audio. An unknown contribution name, an
 unknown filter type, or a parameter out of range stops the run. When a filter changes the
 output, `report.json` sets `checks.filtered_output.intentionally_altered` to `true`.
+
+## Mixxx stem files
+
+Add `--stem-mp4` to write a Native Instruments stem file next to the WAV stems:
+
+```bash
+poetry run chorus split song.wav --out-dir out/song --stem-mp4    # writes out/song/song.stem.mp4
+```
+
+[Mixxx 2.6](https://mixxx.org) loads the file into a deck. Each stem gets its own volume,
+mute, and effect controls, with no added latency. Mixxx needs exactly 4 stems, so the
+"only" stem splits into its two sides:
+
+| Stem | Contents |
+|---|---|
+| Center | `[Lc, Rc]` |
+| Left only | `[Lo, 0]` |
+| Right only | `[0, Ro]` |
+| Surround | `[Ls, Rs]` |
+
+The file holds the input mix plus the 4 stems in ALAC, so the stems add back to the input
+exactly. Mixxx plays that sum, not the stored mix. ALAC files are large: about 95 MB for
+a 2-minute track. The export needs `ffmpeg` on `PATH`.
 
 ## Real-time plugin
 

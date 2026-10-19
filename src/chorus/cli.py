@@ -7,7 +7,7 @@ from pathlib import Path
 
 from chorus.core import ChorusConfig, ChorusProcessor
 from chorus.filters import normalize_filter_config
-from chorus.io import read_stereo_wav, write_stems
+from chorus.io import read_stereo_wav, write_stem_mp4, write_stems
 from chorus.reporting import build_report, write_markdown_report
 
 
@@ -24,6 +24,9 @@ def _build_parser() -> argparse.ArgumentParser:
     split.add_argument("--smoothing-alpha", type=float, default=0.9)
     split.add_argument("--epsilon", type=float, default=1e-9)
     split.add_argument("--filters", type=Path, default=None)
+    split.add_argument(
+        "--stem-mp4", action="store_true", help="also write <input>.stem.mp4 for Mixxx 2.6+"
+    )
     return parser
 
 
@@ -60,6 +63,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         report_path = args.out_dir / "report.json"
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         write_markdown_report(args.out_dir, report)
+        if args.stem_mp4:
+            write_stem_mp4(args.out_dir / f"{args.input.stem}.stem.mp4", sample_rate, audio, result)
     return 0
 
 
